@@ -1,55 +1,53 @@
-﻿const TIMEOUT_MS = 4500;
+var __defProp = Object.defineProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-export default {
+// src/worker.js
+var TIMEOUT_MS = 4500;
+var worker_default = {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/api/inspect") {
       return inspect(request, url);
     }
-
     return new Response(renderPage(), {
       headers: {
         "content-type": "text/html; charset=UTF-8",
-        "cache-control": "no-store",
-      },
+        "cache-control": "no-store"
+      }
     });
-  },
+  }
 };
-
 async function inspect(request, url) {
   const requestedIp = (url.searchParams.get("ip") || "").trim();
   const visitorIp = resolveVisitorIp(request);
   const targetIp = requestedIp || visitorIp;
   const cf = request.cf || {};
-
   if (!targetIp) {
     return json({
       ok: false,
       requestedIp: requestedIp || null,
       visitorIp: visitorIp || null,
       targetIp: null,
-      error: "当前环境未拿到访问者 IP，请手动输入 IP 后再查询。",
+      error: "\u5F53\u524D\u73AF\u5883\u672A\u62FF\u5230\u8BBF\u95EE\u8005 IP\uFF0C\u8BF7\u624B\u52A8\u8F93\u5165 IP \u540E\u518D\u67E5\u8BE2\u3002",
       cloudflare: {
         colo: cf.colo || null,
         country: cf.country || null,
         timezone: cf.timezone || null,
         httpProtocol: cf.httpProtocol || null,
-        tlsVersion: cf.tlsVersion || null,
+        tlsVersion: cf.tlsVersion || null
       },
       summary: null,
       sources: [],
-      domestic: null,
+      domestic: null
     });
   }
-
   const settled = await Promise.allSettled([
     queryIpSb(targetIp),
     queryIpWhois(targetIp),
-    queryDbIp(targetIp),
+    queryDbIp(targetIp)
   ]);
   const sources = settled.map(normalizeResult).filter((item) => item && item.source);
   const okSources = sources.filter((item) => item.ok);
-
   return json({
     ok: true,
     requestedIp: requestedIp || null,
@@ -60,51 +58,47 @@ async function inspect(request, url) {
       country: cf.country || null,
       timezone: cf.timezone || null,
       httpProtocol: cf.httpProtocol || null,
-      tlsVersion: cf.tlsVersion || null,
+      tlsVersion: cf.tlsVersion || null
     },
     summary: buildSummary(targetIp, okSources, cf),
     sources,
-    domestic: null,
+    domestic: null
   });
 }
-
+__name(inspect, "inspect");
 function resolveVisitorIp(request) {
   const direct = request.headers.get("cf-connecting-ip");
   if (direct) return direct.trim();
-
   const trueClientIp = request.headers.get("true-client-ip");
   if (trueClientIp) return trueClientIp.trim();
-
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0].trim();
     if (first) return first;
   }
-
   return "";
 }
-
+__name(resolveVisitorIp, "resolveVisitorIp");
 function normalizeResult(result) {
   if (result.status === "fulfilled") {
     return result.value;
   }
-
   return {
-    source: "查询失败",
+    source: "\u67E5\u8BE2\u5931\u8D25",
     ok: false,
-    error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+    error: result.reason instanceof Error ? result.reason.message : String(result.reason)
   };
 }
-
+__name(normalizeResult, "normalizeResult");
 function buildSummary(ip, list, cf) {
-  const pick = (...values) => values.find((value) => value !== undefined && value !== null && value !== "");
+  const pick = /* @__PURE__ */ __name((...values) => values.find((value) => value !== void 0 && value !== null && value !== ""), "pick");
   const ipv4 = pick(
-    ...list.map((item) => (isIpv4(item.data?.ip) ? item.data.ip : null)),
-    isIpv4(ip) ? ip : null,
+    ...list.map((item) => isIpv4(item.data?.ip) ? item.data.ip : null),
+    isIpv4(ip) ? ip : null
   );
   const ipv6 = pick(
-    ...list.map((item) => (isIpv6(item.data?.ip) ? item.data.ip : null)),
-    isIpv6(ip) ? ip : null,
+    ...list.map((item) => isIpv6(item.data?.ip) ? item.data.ip : null),
+    isIpv6(ip) ? ip : null
   );
   const country = pick(...list.map((item) => item.data?.country));
   const region = pick(...list.map((item) => item.data?.region));
@@ -113,7 +107,6 @@ function buildSummary(ip, list, cf) {
   const org = pick(...list.map((item) => item.data?.org));
   const asn = pick(...list.map((item) => item.data?.asn));
   const timezone = pick(...list.map((item) => item.data?.timezone), cf.timezone);
-
   return {
     ip: ipv4 || ipv6 || ip || null,
     ipv4: ipv4 || null,
@@ -125,18 +118,18 @@ function buildSummary(ip, list, cf) {
     isp: isp || null,
     org: org || null,
     asn: asn || null,
-    timezone: timezone || null,
+    timezone: timezone || null
   };
 }
-
+__name(buildSummary, "buildSummary");
 function isIpv4(value) {
   return typeof value === "string" && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);
 }
-
+__name(isIpv4, "isIpv4");
 function isIpv6(value) {
   return typeof value === "string" && value.includes(":");
 }
-
+__name(isIpv6, "isIpv6");
 async function queryIpSb(ip) {
   const data = await fetchJson(`https://api.ip.sb/geoip/${encodeURIComponent(ip)}`);
   return {
@@ -152,12 +145,12 @@ async function queryIpSb(ip) {
       asn: data.asn,
       timezone: data.timezone,
       latitude: data.latitude,
-      longitude: data.longitude,
+      longitude: data.longitude
     },
-    raw: data,
+    raw: data
   };
 }
-
+__name(queryIpSb, "queryIpSb");
 async function queryIpWhois(ip) {
   const data = await fetchJson(`https://ipwhois.app/json/${encodeURIComponent(ip)}?format=json`);
   return {
@@ -173,13 +166,13 @@ async function queryIpWhois(ip) {
       asn: data.asn,
       timezone: data.timezone,
       latitude: data.latitude,
-      longitude: data.longitude,
+      longitude: data.longitude
     },
     raw: data,
-    error: data.message || null,
+    error: data.message || null
   };
 }
-
+__name(queryIpWhois, "queryIpWhois");
 async function queryDbIp(ip) {
   const data = await fetchJson(`https://api.db-ip.com/v2/free/${encodeURIComponent(ip)}`);
   return {
@@ -191,58 +184,55 @@ async function queryDbIp(ip) {
       region: data.stateProv,
       city: data.city,
       latitude: data.latitude,
-      longitude: data.longitude,
+      longitude: data.longitude
     },
-    raw: data,
+    raw: data
   };
 }
-
+__name(queryDbIp, "queryDbIp");
 async function fetchJson(url, init) {
   return JSON.parse(await (await fetchWithTimeout(url, init)).text());
 }
-
+__name(fetchJson, "fetchJson");
 async function fetchWithTimeout(url, init = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("timeout"), TIMEOUT_MS);
-
   try {
     const response = await fetch(url, {
       ...init,
       headers: {
         "user-agent": "Mozilla/5.0 ipq-worker/2.3",
         accept: "application/json,text/plain,*/*",
-        ...(init.headers || {}),
+        ...init.headers || {}
       },
-      signal: controller.signal,
+      signal: controller.signal
     });
-
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-
     return response;
   } finally {
     clearTimeout(timer);
   }
 }
-
+__name(fetchWithTimeout, "fetchWithTimeout");
 function json(data) {
   return new Response(JSON.stringify(data, null, 2), {
     headers: {
       "content-type": "application/json; charset=UTF-8",
       "cache-control": "no-store",
-      "access-control-allow-origin": "*",
-    },
+      "access-control-allow-origin": "*"
+    }
   });
 }
-
+__name(json, "json");
 function renderPage() {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>IPQ | IP 查询检测面板</title>
+  <title>IPQ | IP \u67E5\u8BE2\u68C0\u6D4B\u9762\u677F</title>
   <style>
     :root{
       --bg:#fafbfc;
@@ -547,22 +537,22 @@ function renderPage() {
 
     <section class="hero">
       <section class="panel" style="min-height:217px;">
-        <h1>IP 查询</h1>
+        <h1>IP \u67E5\u8BE2</h1>
         <div class="hero-stats">
           <div class="card">
-            <div class="label">IPv4 地址</div>
+            <div class="label">IPv4 \u5730\u5740</div>
             <div id="hero-ipv4" class="value big mono">-</div>
           </div>
           <div class="card">
-            <div class="label">IPv6 地址</div>
+            <div class="label">IPv6 \u5730\u5740</div>
             <div id="hero-ipv6" class="value mono">-</div>
           </div>
           <div class="card">
-            <div class="label">位置</div>
+            <div class="label">\u4F4D\u7F6E</div>
             <div id="hero-location" class="value">-</div>
           </div>
           <div class="card">
-            <div class="label">运营商 / 组织</div>
+            <div class="label">\u8FD0\u8425\u5546 / \u7EC4\u7EC7</div>
             <div id="hero-isp" class="value">-</div>
           </div>
         </div>
@@ -570,14 +560,14 @@ function renderPage() {
 
       <aside style="display:grid;gap:16px">
         <section class="panel" style="min-height:217px;">
-          <div class="title">输入 IP 查询</div>
+          <div class="title">\u8F93\u5165 IP \u67E5\u8BE2</div>
           <div class="search">
-            <input id="ip-input" placeholder="请输入 IPv4 或 IPv6 地址">
-            <button id="query-btn" type="button">查询</button>
+            <input id="ip-input" placeholder="\u8BF7\u8F93\u5165 IPv4 \u6216 IPv6 \u5730\u5740">
+            <button id="query-btn" type="button">\u67E5\u8BE2</button>
           </div>
           <div style="margin-top:8px">
-            <div class="title">国内直连出口</div>
-            <div id="domestic-ipcn" class="rowbox" style="min-height:77px;">等待查询</div>
+            <div class="title">\u56FD\u5185\u76F4\u8FDE\u51FA\u53E3</div>
+            <div id="domestic-ipcn" class="rowbox" style="min-height:77px;">\u7B49\u5F85\u67E5\u8BE2</div>
           </div>
         </section>
       </aside>
@@ -585,33 +575,33 @@ function renderPage() {
 
     <section class="grid">
       <section class="panel">
-        <div class="title">汇总信息</div>
+        <div class="title">\u6C47\u603B\u4FE1\u606F</div>
         <div class="summary">
-          <div class="card"><div class="label">当前 IP</div><div id="sum-ip" class="value mono">-</div></div>
-          <div class="card"><div class="label">国家 / 地区</div><div id="sum-region" class="value">-</div></div>
-          <div class="card"><div class="label">城市</div><div id="sum-city" class="value">-</div></div>
+          <div class="card"><div class="label">\u5F53\u524D IP</div><div id="sum-ip" class="value mono">-</div></div>
+          <div class="card"><div class="label">\u56FD\u5BB6 / \u5730\u533A</div><div id="sum-region" class="value">-</div></div>
+          <div class="card"><div class="label">\u57CE\u5E02</div><div id="sum-city" class="value">-</div></div>
           <div class="card"><div class="label">ISP</div><div id="sum-isp" class="value">-</div></div>
-          <div class="card"><div class="label">组织</div><div id="sum-org" class="value">-</div></div>
+          <div class="card"><div class="label">\u7EC4\u7EC7</div><div id="sum-org" class="value">-</div></div>
           <div class="card"><div class="label">ASN</div><div id="sum-asn" class="value mono">-</div></div>
-          <div class="card"><div class="label">时区</div><div id="sum-tz" class="value">-</div></div>
-          <div class="card"><div class="label">网络协议</div><div id="cf-http" class="value mono">-</div></div>
+          <div class="card"><div class="label">\u65F6\u533A</div><div id="sum-tz" class="value">-</div></div>
+          <div class="card"><div class="label">\u7F51\u7EDC\u534F\u8BAE</div><div id="cf-http" class="value mono">-</div></div>
         </div>
       </section>
 
       <section class="panel">
-        <div class="title">浏览器与 WebRTC</div>
+        <div class="title">\u6D4F\u89C8\u5668\u4E0E WebRTC</div>
         <div class="browser">
           <div class="card"><div class="label">User Agent</div><div id="browser-ua" class="value tiny">-</div></div>
-          <div class="card"><div class="label">语言 / 时区</div><div id="browser-locale" class="value">-</div></div>
-          <div class="card"><div class="label">屏幕</div><div id="browser-screen" class="value">-</div></div>
-          <div class="card"><div class="label">网络</div><div id="browser-network" class="value">-</div></div>
+          <div class="card"><div class="label">\u8BED\u8A00 / \u65F6\u533A</div><div id="browser-locale" class="value">-</div></div>
+          <div class="card"><div class="label">\u5C4F\u5E55</div><div id="browser-screen" class="value">-</div></div>
+          <div class="card"><div class="label">\u7F51\u7EDC</div><div id="browser-network" class="value">-</div></div>
         </div>
         <div id="webrtc-list" class="webrtc" style="margin-top:14px"></div>
       </section>
     </section>
 
     <section class="panel" style="margin-top:16px">
-      <div class="toolbar"><div class="title" style="margin:0">国际查询源</div></div>
+      <div class="toolbar"><div class="title" style="margin:0">\u56FD\u9645\u67E5\u8BE2\u6E90</div></div>
       <div id="source-list" class="sources"></div>
     </section>
   </main>
@@ -656,8 +646,8 @@ function renderPage() {
 
     function renderSummary(data) {
       const summary = data.summary || {};
-      els.heroIpv4.textContent = summary.ipv4 || "当前无公网 IPv4";
-      els.heroIpv6.textContent = summary.ipv6 || "当前无公网 IPv6";
+      els.heroIpv4.textContent = summary.ipv4 || "\u5F53\u524D\u65E0\u516C\u7F51 IPv4";
+      els.heroIpv6.textContent = summary.ipv6 || "\u5F53\u524D\u65E0\u516C\u7F51 IPv6";
       els.heroIpv4.className = "value big mono" + (summary.ipv4 ? "" : " placeholder-small");
       els.heroIpv6.className = "value mono" + (summary.ipv6 ? "" : " placeholder-small");
       setText(els.heroLocation, summary.locationText || [summary.country, summary.region, summary.city].filter(Boolean).join(" / "));
@@ -674,25 +664,25 @@ function renderPage() {
 
     function renderDomestic(item) {
       if (!item) {
-        els.domesticIpcn.innerHTML = '<div class="tiny muted">当前没有国内直连结果。</div>';
+        els.domesticIpcn.innerHTML = '<div class="tiny muted">\u5F53\u524D\u6CA1\u6709\u56FD\u5185\u76F4\u8FDE\u7ED3\u679C\u3002</div>';
         return;
       }
       if (!item.ok) {
         els.domesticIpcn.innerHTML =
-          '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连出口</div><div class="tiny">失败</div></div>' +
-          '<div class="tiny muted" style="margin-top:10px;">' + escapeHtml(item.error || "国内直连查询失败") + "</div>";
+          '<div class="source-top"><div style="font-size:15px;font-weight:700;">\u56FD\u5185\u76F4\u8FDE\u51FA\u53E3</div><div class="tiny">\u5931\u8D25</div></div>' +
+          '<div class="tiny muted" style="margin-top:10px;">' + escapeHtml(item.error || "\u56FD\u5185\u76F4\u8FDE\u67E5\u8BE2\u5931\u8D25") + "</div>";
         return;
       }
       const location = item.data && item.data.locationText;
       const isp = item.data && (item.data.isp || item.data.org);
       const details = [
-        detailRow("线路", item.data && item.data.lineName ? item.data.lineName : "浏览器直连国内站点"),
+        detailRow("\u7EBF\u8DEF", item.data && item.data.lineName ? item.data.lineName : "\u6D4F\u89C8\u5668\u76F4\u8FDE\u56FD\u5185\u7AD9\u70B9"),
         detailRow("IP", item.data && item.data.ip, true),
-        detailRow("归属地", location)
+        detailRow("\u5F52\u5C5E\u5730", location)
       ].join("");
       els.domesticIpcn.innerHTML =
-        '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连出口</div><div class="tiny">正常</div></div>' +
-        '<div style="margin-top:10px;">' + (details || '<div class="tiny muted">国内直连未返回可展示结果</div>') + "</div>";
+        '<div class="source-top"><div style="font-size:15px;font-weight:700;">\u56FD\u5185\u76F4\u8FDE\u51FA\u53E3</div><div class="tiny">\u6B63\u5E38</div></div>' +
+        '<div style="margin-top:10px;">' + (details || '<div class="tiny muted">\u56FD\u5185\u76F4\u8FDE\u672A\u8FD4\u56DE\u53EF\u5C55\u793A\u7ED3\u679C</div>') + "</div>";
     }
 
     async function queryDomesticViaIpip() {
@@ -702,7 +692,7 @@ function renderPage() {
         cache: "no-store"
       });
       if (!response.ok) {
-        throw new Error("IPIP 返回 HTTP " + response.status);
+        throw new Error("IPIP \u8FD4\u56DE HTTP " + response.status);
       }
 
       const payload = await response.json();
@@ -723,7 +713,7 @@ function renderPage() {
           city,
           isp: isp || null,
           org: isp || null,
-          lineName: "浏览器直连 IPIP"
+          lineName: "\u6D4F\u89C8\u5668\u76F4\u8FDE IPIP"
         },
         error: payload && payload.message ? String(payload.message).trim() : null
       };
@@ -735,7 +725,7 @@ function renderPage() {
         const script = document.createElement("script");
         const timer = setTimeout(() => {
           cleanup();
-          reject(new Error("PConline 查询超时"));
+          reject(new Error("PConline \u67E5\u8BE2\u8D85\u65F6"));
         }, 6000);
 
         function cleanup() {
@@ -758,12 +748,12 @@ function renderPage() {
             data: {
               ip: payload && payload.ip ? String(payload.ip).trim() : null,
               locationText: addr || locationParts.join(" "),
-              country: locationParts.length ? "中国" : null,
+              country: locationParts.length ? "\u4E2D\u56FD" : null,
               region: province || null,
               city: city || null,
               isp: provider || null,
               org: provider || null,
-              lineName: "浏览器直连 PConline"
+              lineName: "\u6D4F\u89C8\u5668\u76F4\u8FDE PConline"
             },
             error: payload && payload.err ? String(payload.err).trim() : null
           });
@@ -771,7 +761,7 @@ function renderPage() {
 
         script.onerror = () => {
           cleanup();
-          reject(new Error("PConline 脚本加载失败"));
+          reject(new Error("PConline \u811A\u672C\u52A0\u8F7D\u5931\u8D25"));
         };
         script.src = "https://whois.pconline.com.cn/ipJson.jsp?callback=" + encodeURIComponent(callbackName) + "&level=3&_=" + Date.now();
         document.head.appendChild(script);
@@ -785,13 +775,13 @@ function renderPage() {
         try {
           return await queryDomesticViaPconline();
         } catch (fallbackError) {
-          throw new Error("IPIP 与 PConline 均查询失败");
+          throw new Error("IPIP \u4E0E PConline \u5747\u67E5\u8BE2\u5931\u8D25");
         }
       }
     }
 
     async function loadDomesticDirect() {
-      els.domesticIpcn.innerHTML = '<div class="tiny muted">国内直连查询中...</div>';
+      els.domesticIpcn.innerHTML = '<div class="tiny muted">\u56FD\u5185\u76F4\u8FDE\u67E5\u8BE2\u4E2D...</div>';
       try {
         renderDomestic(await queryDomesticDirect());
       } catch (error) {
@@ -807,7 +797,7 @@ function renderPage() {
       els.sourceList.innerHTML = "";
 
       if (!items.length) {
-        els.sourceList.innerHTML = '<div class="rowbox tiny">' + escapeHtml(data.error || "当前没有可展示的查询结果。") + "</div>";
+        els.sourceList.innerHTML = '<div class="rowbox tiny">' + escapeHtml(data.error || "\u5F53\u524D\u6CA1\u6709\u53EF\u5C55\u793A\u7684\u67E5\u8BE2\u7ED3\u679C\u3002") + "</div>";
         return;
       }
 
@@ -818,17 +808,17 @@ function renderPage() {
         const details = item.ok
           ? [
               detailRow("IP", item.data && item.data.ip, true),
-              detailRow("位置", location),
+              detailRow("\u4F4D\u7F6E", location),
               detailRow("ISP", item.data && item.data.isp),
-              detailRow("组织", item.data && item.data.org),
+              detailRow("\u7EC4\u7EC7", item.data && item.data.org),
               detailRow("ASN", item.data && item.data.asn, true),
-              detailRow("时区", item.data && item.data.timezone),
-              detailRow("坐标", item.data && item.data.latitude != null && item.data.longitude != null ? item.data.latitude + ", " + item.data.longitude : "", true)
+              detailRow("\u65F6\u533A", item.data && item.data.timezone),
+              detailRow("\u5750\u6807", item.data && item.data.latitude != null && item.data.longitude != null ? item.data.latitude + ", " + item.data.longitude : "", true)
             ].join("")
-          : '<div class="tiny muted" style="margin-top:10px;">' + escapeHtml(item.error || "请求失败") + "</div>";
+          : '<div class="tiny muted" style="margin-top:10px;">' + escapeHtml(item.error || "\u8BF7\u6C42\u5931\u8D25") + "</div>";
 
         card.innerHTML =
-          '<div class="source-top"><div style="font-size:15px;font-weight:700;">' + escapeHtml(item.source || "未命名来源") + '</div><div class="tiny">' + (item.ok ? "正常" : "失败") + '</div></div>' +
+          '<div class="source-top"><div style="font-size:15px;font-weight:700;">' + escapeHtml(item.source || "\u672A\u547D\u540D\u6765\u6E90") + '</div><div class="tiny">' + (item.ok ? "\u6B63\u5E38" : "\u5931\u8D25") + '</div></div>' +
           '<div style="margin-top:10px;">' + details + "</div>";
         els.sourceList.appendChild(card);
       }
@@ -837,17 +827,17 @@ function renderPage() {
     async function loadInspect() {
       const ip = els.input.value.trim();
       els.queryBtn.disabled = true;
-      els.queryBtn.textContent = "查询中";
+      els.queryBtn.textContent = "\u67E5\u8BE2\u4E2D";
       try {
         const response = await fetch(ip ? "/api/inspect?ip=" + encodeURIComponent(ip) : "/api/inspect", { cache: "no-store" });
         const data = await response.json();
         renderSummary(data);
         renderSources(data);
       } catch (error) {
-        els.sourceList.innerHTML = '<div class="rowbox tiny">查询失败：' + escapeHtml(error && error.message ? error.message : String(error)) + "</div>";
+        els.sourceList.innerHTML = '<div class="rowbox tiny">\u67E5\u8BE2\u5931\u8D25\uFF1A' + escapeHtml(error && error.message ? error.message : String(error)) + "</div>";
       } finally {
         els.queryBtn.disabled = false;
-        els.queryBtn.textContent = "查询";
+        els.queryBtn.textContent = "\u67E5\u8BE2";
       }
     }
 
@@ -860,7 +850,7 @@ function renderPage() {
       if (connection && connection.effectiveType) parts.push(connection.effectiveType);
       if (connection && connection.downlink) parts.push(connection.downlink + " Mb/s");
       if (connection && typeof connection.rtt === "number") parts.push(connection.rtt + " ms RTT");
-      setText(els.browserNetwork, parts.join(" / ") || "浏览器未提供");
+      setText(els.browserNetwork, parts.join(" / ") || "\u6D4F\u89C8\u5668\u672A\u63D0\u4F9B");
     }
 
     function isPrivateAddress(address) {
@@ -885,14 +875,14 @@ function renderPage() {
       const summary = document.createElement("div");
       summary.className = "rtc " + (hasLeak ? "fail" : "ok");
       summary.innerHTML =
-        '<div class="line"><strong>' + (privateHit ? "检测到本地局域网地址暴露" : publicHit ? "检测到 WebRTC 暴露公网地址" : "未发现明显的 WebRTC 地址泄露") + '</strong><span class="badge ' + (hasLeak ? "fail" : "") + '">' + (hasLeak ? "泄露" : "正常") + '</span></div>' +
-        '<div class="tiny muted" style="margin-top:8px;">' + (privateHit ? "浏览器暴露了本地地址：" + escapeHtml(privateHit.address) : publicHit ? "浏览器返回了公网候选地址：" + escapeHtml(publicHit.address) : "当前没有采集到可识别的候选地址。") + "</div>";
+        '<div class="line"><strong>' + (privateHit ? "\u68C0\u6D4B\u5230\u672C\u5730\u5C40\u57DF\u7F51\u5730\u5740\u66B4\u9732" : publicHit ? "\u68C0\u6D4B\u5230 WebRTC \u66B4\u9732\u516C\u7F51\u5730\u5740" : "\u672A\u53D1\u73B0\u660E\u663E\u7684 WebRTC \u5730\u5740\u6CC4\u9732") + '</strong><span class="badge ' + (hasLeak ? "fail" : "") + '">' + (hasLeak ? "\u6CC4\u9732" : "\u6B63\u5E38") + '</span></div>' +
+        '<div class="tiny muted" style="margin-top:8px;">' + (privateHit ? "\u6D4F\u89C8\u5668\u66B4\u9732\u4E86\u672C\u5730\u5730\u5740\uFF1A" + escapeHtml(privateHit.address) : publicHit ? "\u6D4F\u89C8\u5668\u8FD4\u56DE\u4E86\u516C\u7F51\u5019\u9009\u5730\u5740\uFF1A" + escapeHtml(publicHit.address) : "\u5F53\u524D\u6CA1\u6709\u91C7\u96C6\u5230\u53EF\u8BC6\u522B\u7684\u5019\u9009\u5730\u5740\u3002") + "</div>";
       els.webrtcList.appendChild(summary);
 
       if (!list.length) {
         const empty = document.createElement("div");
         empty.className = "rtc tiny";
-        empty.textContent = "浏览器没有返回可用的 WebRTC ICE 候选。";
+        empty.textContent = "\u6D4F\u89C8\u5668\u6CA1\u6709\u8FD4\u56DE\u53EF\u7528\u7684 WebRTC ICE \u5019\u9009\u3002";
         els.webrtcList.appendChild(empty);
         return;
       }
@@ -900,7 +890,7 @@ function renderPage() {
       for (const item of list) {
         const row = document.createElement("div");
         row.className = "rtc";
-        row.innerHTML = '<div class="line"><strong class="mono">' + escapeHtml(item.address) + '</strong><span class="badge">' + escapeHtml(item.type) + '</span></div><div class="tiny muted" style="margin-top:8px;">协议：' + escapeHtml(item.protocol) + "</div>";
+        row.innerHTML = '<div class="line"><strong class="mono">' + escapeHtml(item.address) + '</strong><span class="badge">' + escapeHtml(item.type) + '</span></div><div class="tiny muted" style="margin-top:8px;">\u534F\u8BAE\uFF1A' + escapeHtml(item.protocol) + "</div>";
         els.webrtcList.appendChild(row);
       }
     }
@@ -943,7 +933,183 @@ function renderPage() {
     loadInspect();
     loadDomesticDirect();
     collectWebrtc().catch(() => renderWebrtc([]));
-  </script>
+  <\/script>
 </body>
 </html>`;
 }
+__name(renderPage, "renderPage");
+
+// node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts
+var drainBody = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx) => {
+  try {
+    return await middlewareCtx.next(request, env);
+  } finally {
+    try {
+      if (request.body !== null && !request.bodyUsed) {
+        const reader = request.body.getReader();
+        while (!(await reader.read()).done) {
+        }
+      }
+    } catch (e) {
+      console.error("Failed to drain the unused request body.", e);
+    }
+  }
+}, "drainBody");
+var middleware_ensure_req_body_drained_default = drainBody;
+
+// node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts
+function reduceError(e) {
+  return {
+    name: e?.name,
+    message: e?.message ?? String(e),
+    stack: e?.stack,
+    cause: e?.cause === void 0 ? void 0 : reduceError(e.cause)
+  };
+}
+__name(reduceError, "reduceError");
+var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx) => {
+  try {
+    return await middlewareCtx.next(request, env);
+  } catch (e) {
+    const error = reduceError(e);
+    return Response.json(error, {
+      status: 500,
+      headers: { "MF-Experimental-Error-Stack": "true" }
+    });
+  }
+}, "jsonError");
+var middleware_miniflare3_json_error_default = jsonError;
+
+// .wrangler/tmp/bundle-Ro8Nui/middleware-insertion-facade.js
+var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
+  middleware_ensure_req_body_drained_default,
+  middleware_miniflare3_json_error_default
+];
+var middleware_insertion_facade_default = worker_default;
+
+// node_modules/wrangler/templates/middleware/common.ts
+var __facade_middleware__ = [];
+function __facade_register__(...args) {
+  __facade_middleware__.push(...args.flat());
+}
+__name(__facade_register__, "__facade_register__");
+function __facade_invokeChain__(request, env, ctx, dispatch, middlewareChain) {
+  const [head, ...tail] = middlewareChain;
+  const middlewareCtx = {
+    dispatch,
+    next(newRequest, newEnv) {
+      return __facade_invokeChain__(newRequest, newEnv, ctx, dispatch, tail);
+    }
+  };
+  return head(request, env, ctx, middlewareCtx);
+}
+__name(__facade_invokeChain__, "__facade_invokeChain__");
+function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
+  return __facade_invokeChain__(request, env, ctx, dispatch, [
+    ...__facade_middleware__,
+    finalMiddleware
+  ]);
+}
+__name(__facade_invoke__, "__facade_invoke__");
+
+// .wrangler/tmp/bundle-Ro8Nui/middleware-loader.entry.ts
+var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
+  constructor(scheduledTime, cron, noRetry) {
+    this.scheduledTime = scheduledTime;
+    this.cron = cron;
+    this.#noRetry = noRetry;
+  }
+  static {
+    __name(this, "__Facade_ScheduledController__");
+  }
+  #noRetry;
+  noRetry() {
+    if (!(this instanceof ___Facade_ScheduledController__)) {
+      throw new TypeError("Illegal invocation");
+    }
+    this.#noRetry();
+  }
+};
+function wrapExportedHandler(worker) {
+  if (__INTERNAL_WRANGLER_MIDDLEWARE__ === void 0 || __INTERNAL_WRANGLER_MIDDLEWARE__.length === 0) {
+    return worker;
+  }
+  for (const middleware of __INTERNAL_WRANGLER_MIDDLEWARE__) {
+    __facade_register__(middleware);
+  }
+  const fetchDispatcher = /* @__PURE__ */ __name(function(request, env, ctx) {
+    if (worker.fetch === void 0) {
+      throw new Error("Handler does not export a fetch() function.");
+    }
+    return worker.fetch(request, env, ctx);
+  }, "fetchDispatcher");
+  return {
+    ...worker,
+    fetch(request, env, ctx) {
+      const dispatcher = /* @__PURE__ */ __name(function(type, init) {
+        if (type === "scheduled" && worker.scheduled !== void 0) {
+          const controller = new __Facade_ScheduledController__(
+            Date.now(),
+            init.cron ?? "",
+            () => {
+            }
+          );
+          return worker.scheduled(controller, env, ctx);
+        }
+      }, "dispatcher");
+      return __facade_invoke__(request, env, ctx, dispatcher, fetchDispatcher);
+    }
+  };
+}
+__name(wrapExportedHandler, "wrapExportedHandler");
+function wrapWorkerEntrypoint(klass) {
+  if (__INTERNAL_WRANGLER_MIDDLEWARE__ === void 0 || __INTERNAL_WRANGLER_MIDDLEWARE__.length === 0) {
+    return klass;
+  }
+  for (const middleware of __INTERNAL_WRANGLER_MIDDLEWARE__) {
+    __facade_register__(middleware);
+  }
+  return class extends klass {
+    #fetchDispatcher = /* @__PURE__ */ __name((request, env, ctx) => {
+      this.env = env;
+      this.ctx = ctx;
+      if (super.fetch === void 0) {
+        throw new Error("Entrypoint class does not define a fetch() function.");
+      }
+      return super.fetch(request);
+    }, "#fetchDispatcher");
+    #dispatcher = /* @__PURE__ */ __name((type, init) => {
+      if (type === "scheduled" && super.scheduled !== void 0) {
+        const controller = new __Facade_ScheduledController__(
+          Date.now(),
+          init.cron ?? "",
+          () => {
+          }
+        );
+        return super.scheduled(controller);
+      }
+    }, "#dispatcher");
+    fetch(request) {
+      return __facade_invoke__(
+        request,
+        this.env,
+        this.ctx,
+        this.#dispatcher,
+        this.#fetchDispatcher
+      );
+    }
+  };
+}
+__name(wrapWorkerEntrypoint, "wrapWorkerEntrypoint");
+var WRAPPED_ENTRY;
+if (typeof middleware_insertion_facade_default === "object") {
+  WRAPPED_ENTRY = wrapExportedHandler(middleware_insertion_facade_default);
+} else if (typeof middleware_insertion_facade_default === "function") {
+  WRAPPED_ENTRY = wrapWorkerEntrypoint(middleware_insertion_facade_default);
+}
+var middleware_loader_entry_default = WRAPPED_ENTRY;
+export {
+  __INTERNAL_WRANGLER_MIDDLEWARE__,
+  middleware_loader_entry_default as default
+};
+//# sourceMappingURL=worker.js.map
