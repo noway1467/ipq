@@ -43,5 +43,6 @@ wrangler init my-worker
 
 ## 本地开发
 - wrangler dev
+
 ## 部署到cloudfalre
 - wrangler deploy
