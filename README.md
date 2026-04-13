@@ -22,6 +22,26 @@ IPQ 是一个部署在 Cloudflare Workers 上的 IP 查询页面。
 - 入口文件：`src/worker.js`
 - 配置文件：`wrangler.toml`
 
-## 备注
+## 本地开发部署
 
-如果后续改了 `wrangler.toml` 或入口文件结构，再重新触发一次 Cloudflare Git 部署即可。
+## 安装 Wrangler
+
+# 方式1：npm（推荐）
+npm install -g wrangler
+
+# 方式2：yarn
+yarn global add wrangler
+
+# 验证安装
+wrangler --version
+
+## 登录cloudfalre
+- wrangler login
+
+## 初始化项目
+wrangler init my-worker
+
+## 本地开发
+- wrangler dev
+## 部署到cloudfalre
+- wrangler deploy
