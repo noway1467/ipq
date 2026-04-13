@@ -1,0 +1,6 @@
+name = "ipq-worker"
+main = "src/worker.js"
+compatibility_date = "2026-04-13"
+
+[observability]
+enabled = true
