@@ -2,5 +2,8 @@ name = "ipq-worker"
 main = "src/worker.js"
 compatibility_date = "2026-04-13"
 
+[vars]
+IPINFO_TOKEN = "example_ipinfo_token"
+
 [observability]
 enabled = true

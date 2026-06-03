@@ -21,7 +21,15 @@ IPQ 是一个部署在 Cloudflare Workers 上的 IP 查询页面。
 - Worker 名称：`ipq-worker`
 - 入口文件：`src/worker.js`
 - 配置文件：`wrangler.toml`
-- 环境变量：`IPINFO_TOKEN`，用于展示 IPinfo Lite 检测结果
+- 环境变量：`IPINFO_TOKEN`，用于展示 IPinfo Lite 检测结果。
+- `wrangler.toml` 已内置示例变量：
+
+```toml
+[vars]
+IPINFO_TOKEN = "example_ipinfo_token"
+```
+
+部署前请把示例值替换为你的 IPinfo API Token，或者使用 Wrangler Secret 保存真实 Token。
 
 ## 本地开发部署
 
@@ -59,3 +67,5 @@ IPINFO_TOKEN=你的_ipinfo_token
 ```bash
 wrangler secret put IPINFO_TOKEN
 ```
+
+如果使用 Wrangler Secret，`wrangler.toml` 中的示例值只作为占位说明，真实 Token 不会写入仓库。
