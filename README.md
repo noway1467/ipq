@@ -31,6 +31,20 @@ IPINFO_TOKEN = "example_ipinfo_token"
 
 部署前请把示例值替换为你的 IPinfo API Token，或者使用 Wrangler Secret 保存真实 Token。
 
+IPinfo Lite 会展示以下字段：
+
+- `ip`
+- `network`
+- `asn`
+- `as_name`
+- `as_domain`
+- `country_code`
+- `country`
+- `continent_code`
+- `continent`
+- `anycast`
+- `bogon`
+
 ## 本地开发部署
 
 ## 安装 Wrangler

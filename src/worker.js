@@ -229,10 +229,18 @@ async function queryIpInfo(ip, token) {
     ok: !!data.ip,
     data: {
       ip: data.ip,
-      country: data.country || data.country_code,
+      network: data.network,
+      country: data.country,
+      countryCode: data.country_code,
+      continent: data.continent,
+      continentCode: data.continent_code,
       isp: data.as_name,
       org: data.as_domain,
       asn,
+      asName: data.as_name,
+      asDomain: data.as_domain,
+      anycast: data.anycast,
+      bogon: data.bogon,
     },
     raw: data,
   };
@@ -859,10 +867,17 @@ function renderPage() {
         const details = item.ok
           ? [
               detailRow("IP", item.data && item.data.ip, true),
+              detailRow("网络段", item.data && item.data.network, true),
               detailRow("位置", location),
+              detailRow("国家代码", item.data && item.data.countryCode, true),
+              detailRow("洲", [item.data && item.data.continent, item.data && item.data.continentCode].filter(Boolean).join(" / ")),
               detailRow("ISP", item.data && item.data.isp),
               detailRow("组织", item.data && item.data.org),
+              detailRow("AS 名称", item.data && item.data.asName),
+              detailRow("AS 域名", item.data && item.data.asDomain, true),
               detailRow("ASN", item.data && item.data.asn, true),
+              detailRow("Anycast", item.data && item.data.anycast === true ? "是" : ""),
+              detailRow("Bogon", item.data && item.data.bogon === true ? "是" : ""),
               detailRow("时区", item.data && item.data.timezone),
               detailRow("坐标", item.data && item.data.latitude != null && item.data.longitude != null ? item.data.latitude + ", " + item.data.longitude : "", true)
             ].join("")
