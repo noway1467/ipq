@@ -244,6 +244,7 @@ async function queryIpInfo(ip, token) {
   }
 
   const asn = data.asn ? String(data.asn).replace(/^AS/i, "") : null;
+  const asType = data.as_type || data.asType || data.as?.type || null;
 
   return {
     source: "IPinfo",
@@ -255,11 +256,10 @@ async function queryIpInfo(ip, token) {
       countryCode: data.country_code,
       continent: data.continent,
       continentCode: data.continent_code,
-      isp: data.as_name,
-      org: data.as_domain,
       asn,
       asName: data.as_name,
       asDomain: data.as_domain,
+      asType,
       anycast: data.anycast,
       bogon: data.bogon,
     },
@@ -646,7 +646,7 @@ function renderPage() {
             <button id="query-btn" type="button">查询</button>
           </div>
           <div style="margin-top:8px">
-            <div class="title">国内直连出口</div>
+            <div class="title">国内直连查询</div>
             <div id="domestic-ipcn" class="rowbox" style="min-height:77px;">等待查询</div>
           </div>
         </section>
@@ -749,7 +749,7 @@ function renderPage() {
       }
       if (!item.ok) {
         els.domesticIpcn.innerHTML =
-          '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连出口</div><div class="tiny">失败</div></div>' +
+          '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连查询</div><div class="tiny">失败</div></div>' +
           '<div class="tiny muted" style="margin-top:10px;">' + escapeHtml(item.error || "国内直连查询失败") + "</div>";
         return;
       }
@@ -761,7 +761,7 @@ function renderPage() {
         detailRow("归属地", location)
       ].join("");
       els.domesticIpcn.innerHTML =
-        '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连出口</div><div class="tiny">正常</div></div>' +
+        '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连查询</div><div class="tiny">正常</div></div>' +
         '<div style="margin-top:10px;">' + (details || '<div class="tiny muted">国内直连未返回可展示结果</div>') + "</div>";
     }
 
@@ -901,6 +901,7 @@ function renderPage() {
               detailRow("组织", item.data && item.data.org),
               detailRow("AS 名称", item.data && item.data.asName),
               detailRow("AS 域名", item.data && item.data.asDomain, true),
+              detailRow("AS Type", item.data && item.data.asType),
               detailRow("ASN", item.data && item.data.asn, true),
               detailRow("连接类型", item.data && item.data.connectionType),
               detailRow("风险等级", item.data && item.data.threatLevel),

@@ -38,6 +38,7 @@ IPinfo Lite 会展示以下字段：
 - `asn`
 - `as_name`
 - `as_domain`
+- `as_type`，如果接口返回该字段会展示为 `AS Type`
 - `country_code`
 - `country`
 - `continent_code`
