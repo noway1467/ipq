@@ -29,7 +29,7 @@ IPQ 是一个部署在 Cloudflare Workers 上的 IP 查询页面。
 IPINFO_TOKEN = "example_ipinfo_token"
 ```
 
-部署前请把示例值替换为你的 IPinfo API Token，或者使用 Wrangler Secret 保存真实 Token。
+部署前请把示例值替换为你的 IPinfo API Token，或者使用 Wrangler Secret 保存真实 Token。后续更新 `wrangler.toml` 时请保留 `[vars]` 下的 `IPINFO_TOKEN` 配置。
 
 IPinfo Lite 会展示以下字段：
 
@@ -44,6 +44,35 @@ IPinfo Lite 会展示以下字段：
 - `continent`
 - `anycast`
 - `bogon`
+
+DB-IP 会尽可能展示以下字段。Free API 通常包含 IP、洲、国家、省州、城市；如果 API 返回更高套餐字段，页面也会自动展示：
+
+- `ipAddress`
+- `continentCode`
+- `continentName`
+- `countryCode`
+- `countryName`
+- `isEuMember`
+- `currencyCode`
+- `currencyName`
+- `phonePrefix`
+- `languages`
+- `stateProvCode`
+- `stateProv`
+- `district`
+- `city`
+- `geonameId`
+- `zipCode`
+- `latitude`
+- `longitude`
+- `gmtOffset`
+- `timeZone`
+- `weatherCode`
+- `isp`
+- `organization`
+- `asn`
+- `connectionType`
+- `threatLevel`
 
 ## 本地开发部署
 
