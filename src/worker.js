@@ -1,10 +1,10 @@
 ﻿const TIMEOUT_MS = 4500;
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/api/inspect") {
-      return inspect(request, url);
+      return inspect(request, url, env || {});
     }
 
     return new Response(renderPage(), {
@@ -16,7 +16,7 @@ export default {
   },
 };
 
-async function inspect(request, url) {
+async function inspect(request, url, env) {
   const requestedIp = (url.searchParams.get("ip") || "").trim();
   const visitorIp = resolveVisitorIp(request);
   const targetIp = requestedIp || visitorIp;
@@ -43,6 +43,7 @@ async function inspect(request, url) {
   }
 
   const settled = await Promise.allSettled([
+    queryIpInfo(targetIp, env.IPINFO_TOKEN),
     queryIpSb(targetIp),
     queryIpWhois(targetIp),
     queryDbIp(targetIp),
@@ -192,6 +193,46 @@ async function queryDbIp(ip) {
       city: data.city,
       latitude: data.latitude,
       longitude: data.longitude,
+    },
+    raw: data,
+  };
+}
+
+async function queryIpInfo(ip, token) {
+  if (!token) {
+    return {
+      source: "IPinfo",
+      ok: false,
+      error: "未配置 IPINFO_TOKEN 环境变量",
+    };
+  }
+
+  let data;
+  try {
+    data = await fetchJson(`https://api.ipinfo.io/lite/${encodeURIComponent(ip)}`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+  } catch (error) {
+    return {
+      source: "IPinfo",
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const asn = data.asn ? String(data.asn).replace(/^AS/i, "") : null;
+
+  return {
+    source: "IPinfo",
+    ok: !!data.ip,
+    data: {
+      ip: data.ip,
+      country: data.country || data.country_code,
+      isp: data.as_name,
+      org: data.as_domain,
+      asn,
     },
     raw: data,
   };
