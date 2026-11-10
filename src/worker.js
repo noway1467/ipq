@@ -1,4 +1,6 @@
-﻿const TIMEOUT_MS = 4500;
+import { inspectPurity, normalizeIp } from "./purity.js";
+
+const TIMEOUT_MS = 4500;
 
 export default {
   async fetch(request, env) {
@@ -19,7 +21,7 @@ export default {
 async function inspect(request, url, env) {
   const requestedIp = (url.searchParams.get("ip") || "").trim();
   const visitorIp = resolveVisitorIp(request);
-  const targetIp = requestedIp || visitorIp;
+  const targetIp = normalizeIp(requestedIp || visitorIp);
   const cf = request.cf || {};
 
   if (!targetIp) {
@@ -28,7 +30,7 @@ async function inspect(request, url, env) {
       requestedIp: requestedIp || null,
       visitorIp: visitorIp || null,
       targetIp: null,
-      error: "当前环境未拿到访问者 IP，请手动输入 IP 后再查询。",
+      error: requestedIp || visitorIp ? "请输入有效的 IPv4 或 IPv6 地址。" : "当前环境未拿到访问者 IP，请手动输入 IP 后再查询。",
       cloudflare: {
         colo: cf.colo || null,
         country: cf.country || null,
@@ -38,15 +40,19 @@ async function inspect(request, url, env) {
       },
       summary: null,
       sources: [],
+      purity: null,
       domestic: null,
-    });
+    }, 400);
   }
 
-  const settled = await Promise.allSettled([
-    queryIpInfo(targetIp, env.IPINFO_TOKEN),
-    queryIpSb(targetIp),
-    queryIpWhois(targetIp),
-    queryDbIp(targetIp),
+  const [settled, purity] = await Promise.all([
+    Promise.allSettled([
+      queryIpInfo(targetIp, env.IPINFO_TOKEN),
+      queryIpSb(targetIp),
+      queryIpWhois(targetIp),
+      queryDbIp(targetIp),
+    ]),
+    inspectPurity(targetIp, env),
   ]);
   const sources = settled.map(normalizeResult).filter((item) => item && item.source);
   const okSources = sources.filter((item) => item.ok);
@@ -65,6 +71,7 @@ async function inspect(request, url, env) {
     },
     summary: buildSummary(targetIp, okSources, cf),
     sources,
+    purity,
     domestic: null,
   });
 }
@@ -296,8 +303,9 @@ async function fetchWithTimeout(url, init = {}) {
   }
 }
 
-function json(data) {
+function json(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
+    status,
     headers: {
       "content-type": "application/json; charset=UTF-8",
       "cache-control": "no-store",
@@ -315,310 +323,232 @@ function renderPage() {
   <title>IPQ | IP 查询检测面板</title>
   <style>
     :root{
-      --bg:#fafbfc;
+      color-scheme:light dark;
+      --bg:#f5f6fa;
       --surface:#ffffff;
-      --surface-elevated:#ffffff;
-      --border:#e8eaed;
-      --border-hover:#dadce0;
-      --text-primary:#1f2937;
-      --text-secondary:#6b7280;
-      --text-tertiary:#9ca3af;
+      --surface-container:#f3f5f9;
+      --border:#dfe3ec;
+      --border-hover:#b8bfd0;
+      --text-primary:#18233a;
+      --text-secondary:#566176;
+      --text-tertiary:#566176;
       --accent:#4f46e5;
       --accent-hover:#4338ca;
-      --accent-light:#eef2ff;
-      --success:#059669;
-      --success-bg:#d1fae5;
-      --error:#dc2626;
-      --error-bg:#fee2e2;
-      --shadow-xs:0 1px 2px rgba(0,0,0,.04);
-      --shadow-sm:0 2px 4px rgba(0,0,0,.06);
-      --shadow-md:0 4px 8px rgba(0,0,0,.08);
-      --shadow-lg:0 8px 16px rgba(0,0,0,.1);
-      --shadow-xl:0 12px 24px rgba(0,0,0,.12);
-      --radius-sm:10px;
-      --radius-md:14px;
-      --radius-lg:18px;
+      --accent-light:#eeecff;
+      --on-accent:#ffffff;
+      --success:#146c43;
+      --success-bg:#e5f5ec;
+      --error:#b3261e;
+      --error-bg:#fcece9;
+      --warning:#805500;
+      --warning-bg:#fff1d4;
+      --purity-hit:var(--error);
+      --purity-clear:var(--success);
+      --space-1:4px;
+      --space-2:8px;
+      --space-3:12px;
+      --space-4:16px;
+      --space-6:24px;
+      --space-8:32px;
+      --radius-sm:8px;
+      --radius-md:12px;
+      --radius-button:20px;
+    }
+    @media(prefers-color-scheme:dark){
+      :root{
+        --bg:#11151f;
+        --surface:#191f2c;
+        --surface-container:#222a3a;
+        --border:#343e51;
+        --border-hover:#65728d;
+        --text-primary:#e5eaf4;
+        --text-secondary:#aab7ce;
+        --text-tertiary:#aab7ce;
+        --accent:#bbb4ff;
+        --accent-hover:#d0cbff;
+        --accent-light:#312d50;
+        --on-accent:#241d54;
+        --success:#8cd9af;
+        --success-bg:#203b30;
+        --error:#ffb4ab;
+        --error-bg:#452b2c;
+        --warning:#efcb84;
+        --warning-bg:#3d3421;
+      }
     }
     *{box-sizing:border-box;margin:0;padding:0}
     html,body{min-height:100vh}
-    body{
-      color:var(--text-primary);
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-      font-size:15px;
-      line-height:1.6;
-      background:var(--bg);
-      -webkit-font-smoothing:antialiased;
-      -moz-osx-font-smoothing:grayscale;
-    }
-    .page{
-      max-width:1260px;
-      margin:0 auto;
-      padding:40px 28px 56px;
-    }
-    .top{
-      display:flex;
-      align-items:center;
-      gap:18px;
-      margin-bottom:40px;
-    }
-    .logo{display:flex;align-items:center;gap:16px}
-    .mark{
-      width:52px;
-      height:52px;
-      border-radius:var(--radius-md);
-      background:linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-      box-shadow:0 4px 12px rgba(79,70,229,.24), inset 0 1px 0 rgba(255,255,255,.2);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      position:relative;
-    }
-    .mark::after{
-      content:"IP";
-      color:#fff;
-      font-size:18px;
-      font-weight:700;
-      letter-spacing:-.02em;
-    }
-    .brand{
-      font-size:30px;
-      font-weight:700;
-      letter-spacing:-.03em;
-      color:var(--text-primary);
-    }
-    .hero{
-      display:grid;
-      grid-template-columns:1.35fr 1fr;
-      gap:24px;
-      margin-bottom:24px;
-    }
-    .grid{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:24px;
-    }
-    .panel{
-      padding:32px;
-      border-radius:var(--radius-lg);
-      background:var(--surface-elevated);
-      border:1px solid var(--border);
-      box-shadow:var(--shadow-md);
-      transition:all .25s cubic-bezier(.4,0,.2,1);
-    }
-    .panel:hover{
-      box-shadow:var(--shadow-lg);
-      border-color:var(--border-hover);
-    }
-    h1{
-      margin:0 0 28px;
-      font-size:clamp(34px,4.5vw,46px);
-      font-weight:700;
-      line-height:1.15;
-      letter-spacing:-.04em;
-      color:var(--text-primary);
-    }
-    .hero-stats,.summary,.browser{
-      display:grid;
-      gap:16px;
-      grid-template-columns:repeat(2,minmax(0,1fr));
-    }
-    .card{
-      padding:20px;
-      border-radius:var(--radius-md);
-      background:var(--bg);
-      border:1px solid var(--border);
-      transition:all .2s ease;
-    }
-    .card:hover{
-      background:var(--surface);
-      border-color:var(--border-hover);
-      box-shadow:var(--shadow-sm);
-      transform:translateY(-1px);
-    }
-    .rowbox,.rtc{
-      padding:24px;
-      border-radius:var(--radius-md);
-      background:var(--bg);
-      border:1px solid var(--border);
-      transition:all .2s ease;
-    }
-    .rowbox:hover{
-      background:var(--surface);
-      border-color:var(--border-hover);
-    }
-    .label,.title{
-      font-size:12px;
-      font-weight:600;
-      letter-spacing:.02em;
-      text-transform:uppercase;
-      color:var(--text-tertiary);
-      margin-bottom:2px;
-    }
-    .title{
-      margin-bottom:20px;
-      font-size:13px;
-      color:var(--text-secondary);
-    }
-    .value{
-      margin-top:10px;
-      font-size:15px;
-      line-height:1.5;
-      word-break:break-word;
-      color:var(--text-primary);
-      font-weight:500;
-    }
-    .big{
-      font-size:clamp(26px,3.2vw,38px);
-      font-weight:700;
-      letter-spacing:-.03em;
-      color:var(--accent);
-    }
-    .placeholder-small{
-      font-size:14px;
-      color:var(--text-tertiary);
-      font-weight:400;
-    }
-    .search{
-      display:flex;
-      gap:12px;
-      margin-top:16px;
-    }
-    input{
-      flex:1;
-      min-width:0;
-      padding:14px 18px;
-      border-radius:var(--radius-sm);
-      border:1.5px solid var(--border);
-      background:var(--surface);
-      color:var(--text-primary);
-      font:inherit;
-      font-size:15px;
-      outline:none;
-      transition:all .2s ease;
-      box-shadow:var(--shadow-xs);
-    }
-    input::placeholder{
-      color:var(--text-tertiary);
-      opacity:.8;
-    }
-    input:hover{
-      border-color:var(--border-hover);
-    }
-    input:focus{
-      border-color:var(--accent);
-      box-shadow:0 0 0 3px var(--accent-light), var(--shadow-sm);
-      background:var(--surface-elevated);
-    }
-    button{
-      min-width:110px;
-      padding:14px 28px;
-      border:0;
-      border-radius:var(--radius-sm);
-      background:var(--accent);
-      color:#fff;
-      font:inherit;
-      font-size:15px;
-      font-weight:600;
-      cursor:pointer;
-      transition:all .2s cubic-bezier(.4,0,.2,1);
-      box-shadow:0 2px 8px rgba(79,70,229,.24);
-      position:relative;
-    }
-    button::before{
-      content:"";
-      position:absolute;
-      inset:0;
-      border-radius:var(--radius-sm);
-      background:linear-gradient(180deg, rgba(255,255,255,.12), transparent);
-      pointer-events:none;
-    }
-    button:hover{
-      background:var(--accent-hover);
-      box-shadow:0 4px 12px rgba(79,70,229,.32);
-      transform:translateY(-1px);
-    }
-    button:active{
-      transform:translateY(0);
-      box-shadow:0 2px 6px rgba(79,70,229,.24);
-    }
-    button:disabled{
-      opacity:.6;
-      cursor:not-allowed;
-      transform:none;
-    }
-    .tiny,.muted{
-      color:var(--text-secondary);
-      font-size:13px;
-      line-height:1.65;
-    }
-    .toolbar,.source-top,.line{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:14px;
-    }
-    .sources,.webrtc{display:grid;gap:16px}
-    .mono{
-      font-family:"SF Mono",Monaco,"Cascadia Code",Consolas,"Liberation Mono",monospace;
-      font-size:.93em;
-      letter-spacing:-.01em;
-    }
-    .badge{
-      padding:5px 12px;
-      border-radius:8px;
-      background:var(--success-bg);
-      font-size:12px;
-      font-weight:600;
-      color:var(--success);
-      border:1px solid rgba(5,150,105,.2);
-    }
-    .badge.fail{
-      background:var(--error-bg);
-      color:var(--error);
-      border-color:rgba(220,38,38,.2);
-    }
-    .rtc.ok{
-      border-color:rgba(5,150,105,.25);
-      background:var(--success-bg);
-    }
-    .rtc.fail{
-      border-color:rgba(220,38,38,.25);
-      background:var(--error-bg);
-    }
-    @media(max-width:1040px){
-      .hero,.grid{grid-template-columns:1fr}
+    body{background:var(--bg);color:var(--text-primary);font:400 14px/20px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+    button,input{font:inherit}
+    a{color:var(--accent);text-underline-offset:4px}
+    a:hover{color:var(--accent-hover)}
+    a,button,input,summary{transition:background-color .2s cubic-bezier(.2,0,0,1),border-color .2s cubic-bezier(.2,0,0,1),color .2s cubic-bezier(.2,0,0,1)}
+    a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+    h1,h2{font-size:20px;line-height:28px;font-weight:600}
+    h3,strong,b{font-size:inherit;font-weight:600}
+    .page{max-width:1200px;margin:0 auto;padding:var(--space-6)}
+    .top,.logo,.top-nav,.toolbar,.source-top{display:flex;align-items:center;gap:var(--space-3)}
+    .top{justify-content:space-between;margin-bottom:var(--space-6)}
+    .mark{width:36px;height:36px;border-radius:var(--radius-sm);background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:600}
+    .mark::after{content:"IP"}
+    .brand{font-size:20px;line-height:28px;font-weight:600}
+    .brand-note{font-size:12px;color:var(--text-secondary)}
+    .top-nav a{min-height:32px;display:inline-flex;align-items:center;padding:var(--space-1) var(--space-2);text-decoration:none;border-radius:var(--radius-sm);color:var(--text-secondary)}
+    .top-nav a:hover{background:var(--surface-container);color:var(--accent)}
+    .panel{min-width:0;padding:var(--space-6);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md)}
+    .query-panel{display:grid;grid-template-columns:1fr minmax(0,1.6fr);align-items:center;gap:var(--space-6);margin-bottom:var(--space-4)}
+    .query-intro p{margin-top:var(--space-1)}
+    .search-label{display:block;margin-bottom:var(--space-1);font-size:12px;color:var(--text-secondary)}
+    .search{display:flex;gap:var(--space-2)}
+    input{flex:1;min-width:0;height:40px;padding:var(--space-2) var(--space-3);border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-container);color:var(--text-primary)}
+    input::placeholder{color:var(--text-secondary)}
+    input:hover{border-color:var(--border-hover)}
+    input:focus{border-color:var(--accent)}
+    button{min-width:80px;min-height:40px;padding:var(--space-2) var(--space-6);border:0;border-radius:var(--radius-button);background:var(--accent);color:var(--on-accent);font-weight:500;cursor:pointer}
+    button:hover{background:var(--accent-hover)}
+    button:active{filter:brightness(.92)}
+    button:disabled{opacity:.6;cursor:wait}
+    .search-hint{margin-top:var(--space-1)}
+    .hero{margin-bottom:var(--space-4)}
+    .hero-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-3)}
+    .hero-stats .card{background:var(--surface);padding:var(--space-4);border:1px solid var(--border)}
+    .card{min-width:0;padding:var(--space-3);background:var(--surface-container);border-radius:var(--radius-sm)}
+    .label,.title{font-size:12px;line-height:20px;color:var(--text-secondary)}
+    .title{font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:var(--space-4)}
+    .value{margin-top:var(--space-1);font-weight:500;overflow-wrap:anywhere}
+    .big{font-size:20px;line-height:28px;color:var(--accent)}
+    .placeholder-small{font-size:12px;line-height:20px;font-weight:400;color:var(--text-secondary)}
+    .tiny,.muted{font-size:12px;line-height:20px;color:var(--text-secondary)}
+    .mono{font-family:"Cascadia Code","SFMono-Regular",Consolas,monospace;font-variant-numeric:tabular-nums}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+    .summary,.browser{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2)}
+    .rowbox,.rtc{min-width:0;padding:var(--space-3);border-radius:var(--radius-sm);background:var(--surface-container)}
+    .line,.purity-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);align-items:center;gap:var(--space-3);min-height:36px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-secondary)}
+    .line:last-child,.purity-row:last-child{border-bottom:0}
+    .line span:last-child,.purity-row span:last-child{text-align:right;color:var(--text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .source-top{justify-content:space-between}
+    .sources{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2)}
+    .webrtc{display:grid;gap:var(--space-2);margin-top:var(--space-4)}
+    .badge,.status-badge,.purity-state{display:inline-flex;align-items:center;gap:var(--space-1);font-size:12px;line-height:20px;padding:var(--space-1) var(--space-2);border-radius:var(--radius-sm);background:var(--surface-container);color:var(--text-secondary)}
+    .badge,.status-badge[data-state="ok"],.purity-state[data-status="clear"]{background:var(--success-bg);color:var(--success)}
+    .badge.fail,.status-badge[data-state="error"],.purity-state[data-status="flagged"]{background:var(--error-bg);color:var(--error)}
+    .purity-state[data-status="hosting"]{background:var(--warning-bg);color:var(--warning)}
+    .rtc.ok{background:var(--success-bg)}
+    .rtc.fail{background:var(--error-bg)}
+    .rtc .mono{min-width:0;overflow-wrap:anywhere}
+    .purity{margin-bottom:var(--space-4)}
+    .purity-header{display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);flex-wrap:wrap}
+    .purity-note{margin-top:var(--space-2)}
+    .purity-target{overflow-wrap:anywhere}
+    .purity-signals{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-4)}
+    .purity-signal{display:inline-flex;align-items:center;gap:var(--space-1);padding:var(--space-1) var(--space-2);border-radius:var(--radius-sm);background:var(--surface-container);font-size:12px;color:var(--text-secondary)}
+    .purity-signal.hit{color:var(--error);background:var(--error-bg)}
+    .purity-signal.clear{color:var(--success);background:var(--success-bg)}
+    .purity-signal.network{color:var(--warning);background:var(--warning-bg)}
+    .purity-score{margin-top:var(--space-4);display:grid;grid-template-columns:minmax(160px,.65fr) minmax(0,2fr);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
+    .purity-score:empty{display:none}
+    .score-overview{padding:var(--space-4);background:var(--accent-light);display:flex;flex-direction:column;justify-content:center;gap:var(--space-2)}
+    .score-value{font-size:32px;line-height:40px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.04em;color:var(--accent)}
+    .score-value small{font-size:12px;line-height:20px;letter-spacing:0;font-weight:400;color:var(--text-secondary);margin-left:var(--space-1)}
+    .score-unavailable{font-size:20px;line-height:28px;font-weight:600;color:var(--text-secondary)}
+    .score-breakdown{min-width:0;padding:var(--space-4)}
+    .purity-deduction{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:var(--space-2);min-height:36px;border-bottom:1px solid var(--border)}
+    .purity-deduction:last-child{border-bottom:0}
+    .purity-deduction b{color:var(--text-secondary);font-weight:600;font-variant-numeric:tabular-nums}
+    .purity-deduction b.hit{color:var(--error)}
+    .score-explanation{grid-column:1/-1;border-top:1px solid var(--border);padding:0 var(--space-4)}
+    .score-explanation summary{font-size:12px;color:var(--text-secondary);min-height:36px;display:flex;align-items:center;justify-content:space-between;gap:var(--space-2)}
+    .score-explanation p{font-size:12px;color:var(--text-secondary);margin-bottom:var(--space-3);overflow-wrap:anywhere}
+    summary{cursor:pointer}
+    summary::marker{content:""}
+    summary::-webkit-details-marker{display:none}
+    .score-explanation summary::after,.source-toggle::after,.connection-details>summary::after{content:"+";flex:none;font:500 20px/20px monospace;color:var(--text-secondary)}
+    details[open]>.source-toggle::after,details[open]>summary::after{content:"−"}
+    .source-section-header{display:flex;justify-content:space-between;align-items:center;gap:var(--space-2);margin:var(--space-6) 0 var(--space-2)}
+    .purity-sources{display:grid;gap:var(--space-2)}
+    .source-item{min-width:0;align-self:start;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface)}
+    .source-toggle{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);min-height:48px;border-radius:var(--radius-sm)}
+    .source-toggle:hover{background:var(--surface-container)}
+    .source-toggle .status-badge{margin-left:auto;flex-shrink:0}
+    .source-name{min-width:0;display:flex;align-items:center;gap:var(--space-3);flex:1}
+    .source-name strong{flex-shrink:0}
+    .source-brief{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-secondary)}
+    .source-content{padding:0 var(--space-3) var(--space-3);border-top:1px solid var(--border)}
+    .source-content .purity-signals{margin-top:var(--space-3);margin-bottom:var(--space-2)}
+    .source-content p{margin-top:var(--space-3);overflow-wrap:anywhere}
+    .source-footer{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-2)}
+    .source-footer a,.purity-reports a{display:inline-flex;align-items:center;min-height:32px;font-size:12px;padding:var(--space-1) 0}
+    .purity-reports{padding-left:var(--space-4);margin-top:var(--space-2);font-size:12px;overflow-wrap:anywhere}
+    .connection-details{margin-top:var(--space-4);padding-top:var(--space-2);border-top:1px solid var(--border)}
+    .connection-details>summary{display:flex;justify-content:space-between;align-items:center;gap:var(--space-2);min-height:40px;font-weight:500}
+    .geo-panel{margin-top:var(--space-4)}
+    .toolbar{justify-content:space-between;margin-bottom:var(--space-3)}
+    .toolbar .title{margin:0}
+    .loading-placeholder{min-height:48px;display:flex;align-items:center;gap:var(--space-2);padding:var(--space-3);color:var(--text-secondary);background:var(--surface-container);border-radius:var(--radius-sm)}
+    .loading-dot{width:8px;height:8px;flex:none;border-radius:50%;background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+    @keyframes pulse{50%{opacity:.3}}
+    @media(max-width:900px){
       .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .grid{grid-template-columns:1fr}
+      .query-panel{grid-template-columns:1fr 1.5fr}
+      .sources{grid-template-columns:1fr}
     }
-    @media(max-width:680px){
-      .page{padding:24px 18px 40px}
-      .top{margin-bottom:28px}
-      .mark{width:48px;height:48px}
-      .mark::after{font-size:16px}
-      .brand{font-size:26px}
-      .panel{padding:24px}
-      h1{margin-bottom:22px}
-      .search,.toolbar,.source-top,.line{
-        flex-direction:column;
-        align-items:stretch;
-      }
-      .hero-stats,.summary,.browser{grid-template-columns:1fr}
-      button{min-height:48px}
+    @media(max-width:600px){
+      .page{padding:var(--space-4)}
+      .top{margin-bottom:var(--space-4)}
+      .top-nav{gap:var(--space-1)}
+      .brand-note{display:none}
+      .panel{padding:var(--space-4)}
+      .query-panel{grid-template-columns:1fr;gap:var(--space-3)}
+      input,button{min-height:48px}
+      .hero-stats{gap:var(--space-2)}
+      .hero-stats .card{padding:var(--space-3)}
+      .purity-score{grid-template-columns:1fr}
+      .score-overview{display:grid;grid-template-columns:1fr auto;align-items:center}
+      .score-overview p{grid-column:1/-1}
+      .source-name{display:block}
+      .source-name strong,.source-brief{display:block}
+      .source-toggle{gap:var(--space-2);min-height:56px}
+      .purity-header{align-items:flex-start}
+      .source-section-header{align-items:flex-start}
+      .source-section-header .tiny{text-align:right}
+      .source-footer a,.purity-reports a{min-height:48px}
     }
+    @media(pointer:coarse){input,button,.top-nav a,.score-explanation summary,.connection-details>summary,.source-footer a,.purity-reports a{min-height:48px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
   </style>
 </head>
 <body>
   <main class="page">
-    <div class="top">
+    <header class="top">
       <div class="logo">
-        <div class="mark"></div>
+        <div class="mark" aria-hidden="true"></div>
         <div class="brand">IPQ</div>
+        <span class="brand-note">IP 查询与信誉检测</span>
       </div>
-    </div>
+      <nav class="top-nav" aria-label="页面导航">
+        <a href="#purity">纯洁度</a>
+        <a href="#connection">连接信息</a>
+      </nav>
+    </header>
 
-    <section class="hero">
-      <section class="panel" style="min-height:217px;">
+    <section class="panel query-panel" aria-label="查询 IP">
+      <div class="query-intro">
         <h1>IP 查询</h1>
-        <div class="hero-stats">
+        <p class="tiny">查看归属地、网络类型与风险线索</p>
+      </div>
+      <form id="query-form">
+        <label class="search-label" for="ip-input">IPv4 / IPv6 地址</label>
+        <div class="search">
+          <input id="ip-input" placeholder="例如 1.1.1.1" autocomplete="off" spellcheck="false" aria-describedby="query-hint">
+          <button id="query-btn" type="submit">查询</button>
+        </div>
+        <p id="query-hint" class="tiny search-hint">留空查询当前访问出口，按 Enter 开始。</p>
+      </form>
+    </section>
+
+    <section class="hero" aria-label="IP 概况">
+      <div class="hero-stats">
           <div class="card">
             <div class="label">IPv4 地址</div>
             <div id="hero-ipv4" class="value big mono">-</div>
@@ -635,22 +565,20 @@ function renderPage() {
             <div class="label">运营商 / 组织</div>
             <div id="hero-isp" class="value">-</div>
           </div>
-        </div>
-      </section>
+      </div>
+    </section>
 
-      <aside style="display:grid;gap:16px">
-        <section class="panel" style="min-height:217px;">
-          <div class="title">输入 IP 查询</div>
-          <div class="search">
-            <input id="ip-input" placeholder="请输入 IPv4 或 IPv6 地址">
-            <button id="query-btn" type="button">查询</button>
-          </div>
-          <div style="margin-top:8px">
-            <div class="title">国内直连查询</div>
-            <div id="domestic-ipcn" class="rowbox" style="min-height:77px;">等待查询</div>
-          </div>
-        </section>
-      </aside>
+    <section id="purity" class="panel purity" aria-labelledby="purity-heading">
+      <div class="purity-header">
+        <h2 id="purity-heading">IP 纯洁度</h2>
+        <span id="purity-state" class="purity-state" role="status">等待查询</span>
+      </div>
+      <p id="purity-target" class="tiny purity-note purity-target"></p>
+      <p class="tiny purity-note">机房标记代表网络类型，未命中不等于一定安全。</p>
+      <div id="purity-signals" class="purity-signals"></div>
+      <div id="purity-score" class="purity-score"></div>
+      <div class="source-section-header"><h3>检测来源</h3><span class="tiny">展开查看报告与原始数据</span></div>
+      <div id="purity-sources" class="purity-sources" aria-busy="false"></div>
     </section>
 
     <section class="grid">
@@ -668,7 +596,7 @@ function renderPage() {
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="connection">
         <div class="title">浏览器与 WebRTC</div>
         <div class="browser">
           <div class="card"><div class="label">User Agent</div><div id="browser-ua" class="value tiny">-</div></div>
@@ -676,12 +604,16 @@ function renderPage() {
           <div class="card"><div class="label">屏幕</div><div id="browser-screen" class="value">-</div></div>
           <div class="card"><div class="label">网络</div><div id="browser-network" class="value">-</div></div>
         </div>
-        <div id="webrtc-list" class="webrtc" style="margin-top:14px"></div>
+        <div id="webrtc-list" class="webrtc"></div>
+        <details class="connection-details" open>
+          <summary>国内直连查询</summary>
+          <div id="domestic-ipcn" class="rowbox">等待查询</div>
+        </details>
       </section>
     </section>
 
-    <section class="panel" style="margin-top:16px">
-      <div class="toolbar"><div class="title" style="margin:0">国际查询源</div></div>
+    <section class="panel geo-panel">
+      <div class="toolbar"><h2 class="title">归属地查询来源</h2><span class="tiny">展开核对各来源结果</span></div>
       <div id="source-list" class="sources"></div>
     </section>
   </main>
@@ -708,6 +640,11 @@ function renderPage() {
       browserScreen: document.getElementById("browser-screen"),
       browserNetwork: document.getElementById("browser-network"),
       sourceList: document.getElementById("source-list"),
+      purityState: document.getElementById("purity-state"),
+      purityTarget: document.getElementById("purity-target"),
+      puritySignals: document.getElementById("purity-signals"),
+      purityScore: document.getElementById("purity-score"),
+      puritySources: document.getElementById("purity-sources"),
       webrtcList: document.getElementById("webrtc-list")
     };
 
@@ -721,7 +658,7 @@ function renderPage() {
 
     function detailRow(label, value, mono = false) {
       if (value === undefined || value === null || value === "") return "";
-      return '<div class="line tiny"><span class="muted">' + escapeHtml(label) + '</span><span class="' + (mono ? "mono" : "") + '">' + escapeHtml(String(value)) + "</span></div>";
+      return '<div class="line tiny"><span class="muted">' + escapeHtml(label) + '</span><span title="' + escapeHtml(value) + '" class="' + (mono ? "mono" : "") + '">' + escapeHtml(String(value)) + "</span></div>";
     }
 
     function renderSummary(data) {
@@ -731,7 +668,7 @@ function renderPage() {
       els.heroIpv4.className = "value big mono" + (summary.ipv4 ? "" : " placeholder-small");
       els.heroIpv6.className = "value mono" + (summary.ipv6 ? "" : " placeholder-small");
       setText(els.heroLocation, summary.locationText || [summary.country, summary.region, summary.city].filter(Boolean).join(" / "));
-      setText(els.heroIsp, [summary.isp, summary.org].filter(Boolean).join(" / "));
+      setText(els.heroIsp, [...new Set([summary.isp, summary.org].filter(Boolean))].join(" / "));
       setText(els.cfHttp, [data.cloudflare && data.cloudflare.httpProtocol, data.cloudflare && data.cloudflare.tlsVersion].filter(Boolean).join(" / "));
       setText(els.sumIp, summary.ip || data.targetIp || data.visitorIp);
       setText(els.sumRegion, [summary.country, summary.region].filter(Boolean).join(" / "));
@@ -749,20 +686,19 @@ function renderPage() {
       }
       if (!item.ok) {
         els.domesticIpcn.innerHTML =
-          '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连查询</div><div class="tiny">失败</div></div>' +
-          '<div class="tiny muted" style="margin-top:10px;">' + escapeHtml(item.error || "国内直连查询失败") + "</div>";
+          '<div class="source-top"><span class="tiny">当前访问线路</span><span class="status-badge" data-state="error">失败</span></div>' +
+          '<p class="tiny purity-note">' + escapeHtml(item.error || "国内直连查询失败") + "</p>";
         return;
       }
       const location = item.data && item.data.locationText;
-      const isp = item.data && (item.data.isp || item.data.org);
       const details = [
         detailRow("线路", item.data && item.data.lineName ? item.data.lineName : "浏览器直连国内站点"),
         detailRow("IP", item.data && item.data.ip, true),
         detailRow("归属地", location)
       ].join("");
       els.domesticIpcn.innerHTML =
-        '<div class="source-top"><div style="font-size:15px;font-weight:700;">国内直连查询</div><div class="tiny">正常</div></div>' +
-        '<div style="margin-top:10px;">' + (details || '<div class="tiny muted">国内直连未返回可展示结果</div>') + "</div>";
+        '<div class="source-top"><span class="tiny">当前访问线路</span><span class="status-badge" data-state="ok">已返回</span></div>' +
+        '<div class="purity-note">' + (details || '<div class="tiny muted">国内直连未返回可展示结果</div>') + "</div>";
     }
 
     async function queryDomesticViaIpip() {
@@ -882,8 +818,8 @@ function renderPage() {
       }
 
       for (const item of items) {
-        const card = document.createElement("article");
-        card.className = "rowbox";
+        const card = document.createElement("details");
+        card.className = "source-item";
         const location = [item.data && item.data.country, item.data && item.data.region, item.data && item.data.city].filter(Boolean).join(" / ");
         const details = item.ok
           ? [
@@ -915,25 +851,86 @@ function renderPage() {
               detailRow("气象站", item.data && item.data.weatherCode, true),
               detailRow("坐标", item.data && item.data.latitude != null && item.data.longitude != null ? item.data.latitude + ", " + item.data.longitude : "", true)
             ].join("")
-          : '<div class="tiny muted" style="margin-top:10px;">' + escapeHtml(item.error || "请求失败") + "</div>";
+          : '<p class="tiny">' + escapeHtml(item.error || "请求失败") + "</p>";
 
         card.innerHTML =
-          '<div class="source-top"><div style="font-size:15px;font-weight:700;">' + escapeHtml(item.source || "未命名来源") + '</div><div class="tiny">' + (item.ok ? "正常" : "失败") + '</div></div>' +
-          '<div style="margin-top:10px;">' + details + "</div>";
+          '<summary class="source-toggle"><span class="source-name"><strong>' + escapeHtml(item.source || "未命名来源") + '</strong><span class="source-brief" title="' + escapeHtml(location || item.error || "") + '">' + escapeHtml(location || item.error || "") + '</span></span><span class="status-badge" data-state="' + (item.ok ? 'ok' : 'error') + '">' + (item.ok ? "已返回" : "不可用") + '</span></summary>' +
+          '<div class="source-content">' + details + "</div>";
         els.sourceList.appendChild(card);
       }
     }
 
+    const purityLabels = { vpn: "VPN", proxy: "代理", tor: "Tor", hosting: "机房", abuse: "垃圾 / 滥用", bogon: "非公网地址" };
+
+    function puritySignal(label, value, conflict = false, sources = []) {
+      const state = value === true ? (label === "机房" ? "network" : "hit") : value === false ? "clear" : "unknown";
+      const verdict = value === true ? "命中" : value === false ? "未命中" : "未知";
+      return '<span class="purity-signal ' + state + '" title="' + escapeHtml(sources.join("、")) + '">' +
+        escapeHtml(label) + ' · ' + verdict + (conflict ? '（来源有分歧）' : '') + '</span>';
+    }
+
+    function renderPurity(purity, error) {
+      els.puritySources.setAttribute("aria-busy", "false");
+      els.puritySources.innerHTML = "";
+      els.puritySignals.innerHTML = "";
+      els.purityScore.innerHTML = "";
+      els.purityTarget.textContent = "";
+      els.purityState.dataset.status = purity ? purity.status : "unknown";
+      els.purityState.textContent = purity ? purity.label : error || "暂无检测结果";
+      if (!purity) {
+        els.puritySources.innerHTML = '<div class="loading-placeholder tiny">' + escapeHtml(error || "输入 IP 或留空查询当前出口。") + '</div>';
+        return;
+      }
+      els.purityTarget.textContent = '查询目标：' + purity.targetIp + ' · ' + purity.available + '/' + purity.total + ' 个来源有结果';
+      els.puritySignals.innerHTML = Object.entries(purityLabels).map(([key, label]) => {
+        const signal = purity.signals[key];
+        return puritySignal(label, signal.value, signal.conflict, signal.sources);
+      }).join("");
+      const scoring = purity.scoring;
+      els.purityScore.innerHTML = '<div class="score-overview"><span class="tiny">纯洁度参考分</span>' +
+        (scoring.value === null ? '<strong class="score-unavailable">数据不足</strong>' : '<strong class="score-value">' + scoring.value + '<small>/ 100</small></strong>') +
+        '<p class="tiny">仅计算已接入的检测项</p></div><div class="score-breakdown"><h3>扣分明细</h3>' +
+        scoring.deductions.map((item) => '<div class="purity-deduction"><b class="' + (item.points > 0 ? 'hit' : '') + '">' + (item.points === null ? '—' : item.points > 0 ? '−' + item.points : '0') + '</b><span>' + escapeHtml(item.label) + '</span></div>').join("") +
+        (scoring.missing.length ? '<p class="tiny purity-note">缺少：' + escapeHtml(scoring.missing.join("、")) + '</p>' : '') +
+        (scoring.capped ? '<p class="tiny purity-note">滥用类已按 40 分封顶。</p>' : '') + '</div>' +
+        '<details class="score-explanation"><summary>评分范围与计算依据</summary><p>' + escapeHtml(scoring.note) + '</p>' +
+        scoring.deductions.map((item) => '<p><strong>' + escapeHtml(item.label) + '：</strong>' + escapeHtml(item.detail) + '</p>').join("") + '</details>';
+      for (const source of purity.sources) {
+        const card = document.createElement("details");
+        card.className = "source-item purity-source";
+        const status = source.ok ? "已返回" : source.status === "unconfigured" ? "待配置" : source.status === "unknown" ? "未知" : "不可用";
+        const firstDetail = (source.details || []).find(([, value]) => value !== null && value !== undefined && value !== "");
+        const brief = source.ok ? (firstDetail ? firstDetail[0] + '：' + firstDetail[1] : '已返回检测结果') : source.error;
+        const rows = (source.details || []).filter(([, value]) => value !== null && value !== undefined && value !== "").map(([label, value]) =>
+          '<div class="purity-row"><span>' + escapeHtml(label) + '</span><span title="' + escapeHtml(value) + '">' + escapeHtml(value) + '</span></div>'
+        ).join("");
+        card.innerHTML = '<summary class="source-toggle"><span class="source-name"><strong>' + escapeHtml(source.source) + '</strong><span class="source-brief" title="' + escapeHtml(brief) + '">' + escapeHtml(brief) + '</span></span><span class="status-badge" data-state="' + escapeHtml(source.status) + '">' + status + '</span></summary><div class="source-content">' +
+          (source.ok ? '<div class="purity-signals">' + Object.entries(purityLabels).filter(([key]) => source.flags[key] !== null).map(([key, label]) => puritySignal(label, source.flags[key])).join("") + '</div>' : '<p class="tiny">' + escapeHtml(source.error) + '</p>') +
+          rows + (source.reports && source.reports.length ? '<ul class="purity-reports">' + source.reports.map((report) => '<li><a href="' + escapeHtml(report.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(report.title) + '</a></li>').join("") + '</ul>' : '') +
+          (source.note ? '<p class="tiny">' + escapeHtml(source.note) + '</p>' : '') +
+          '<div class="source-footer"><a href="' + escapeHtml(source.website) + '" target="_blank" rel="noopener noreferrer">查看来源网站</a>' +
+          (source.checkedAt ? '<span class="tiny">' + (source.cached ? '缓存 · ' : '查询于 ') + escapeHtml(new Date(source.checkedAt).toLocaleString()) + '</span>' : '') + '</div></div>';
+        els.puritySources.appendChild(card);
+      }
+    }
+
     async function loadInspect() {
+      if (els.queryBtn.disabled) return;
       const ip = els.input.value.trim();
       els.queryBtn.disabled = true;
       els.queryBtn.textContent = "查询中";
+      renderPurity(null, "检测中…");
+      els.puritySources.setAttribute("aria-busy", "true");
+      els.puritySources.innerHTML = '<div class="loading-placeholder tiny"><span class="loading-dot" aria-hidden="true"></span>正在查询风险数据库与情报报告…</div>';
       try {
         const response = await fetch(ip ? "/api/inspect?ip=" + encodeURIComponent(ip) : "/api/inspect", { cache: "no-store" });
         const data = await response.json();
         renderSummary(data);
         renderSources(data);
+        renderPurity(data.purity, data.error);
       } catch (error) {
+        renderSummary({});
+        renderPurity(null, "查询失败，请稍后重试");
         els.sourceList.innerHTML = '<div class="rowbox tiny">查询失败：' + escapeHtml(error && error.message ? error.message : String(error)) + "</div>";
       } finally {
         els.queryBtn.disabled = false;
@@ -1025,9 +1022,9 @@ function renderPage() {
       renderWebrtc(found);
     }
 
-    els.queryBtn.addEventListener("click", loadInspect);
-    els.input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") loadInspect();
+    document.getElementById("query-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      loadInspect();
     });
     renderBrowserInfo();
     loadInspect();

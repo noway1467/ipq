@@ -2,6 +2,28 @@
 
 IPQ 是一个部署在 Cloudflare Workers 上的 IP 查询页面。
 
+## IP 纯洁度检测
+
+查询时同时展示多个来源的 VPN、代理、Tor、机房和垃圾滥用标记、威胁情报报告及原始风险分，保留来源分歧。接口不可用或未返回的字段显示未知，机房标记不等于恶意。
+
+页面支持手机与桌面布局，明暗主题跟随系统设置；检测来源、情报报告和评分依据可展开查看。
+
+| 来源 | 检测内容 | 配置 |
+| --- | --- | --- |
+| [IPQuery](https://ipquery.io/docs) | VPN、代理、Tor、机房及来源风险分 | 无需密钥 |
+| [Blackbox](https://blackbox.ipinfo.app/) | 网络类型、匿名网络标记、分类依据 | Beta 阶段无需密钥，服务规则可能变化 |
+| [StopForumSpam](https://www.stopforumspam.com/usage) | 论坛垃圾滥用记录、记录次数和最近出现时间 | 无需密钥 |
+| [AlienVault OTX](https://otx.alienvault.com/) | 威胁情报报告数、报告名称及白名单 / 误报标记 | 公开查询接口，受上游可用性限制 |
+| [ipapi.is](https://ipapi.is/developers.html) | VPN、代理、Tor、机房及滥用标记 | 可选，配置 `IPAPI_IS_KEY` |
+
+ipapi.is 的匿名接口已不提供上述风险字段。需要此来源时，注册其免费账号取得密钥，在 Cloudflare Workers 中添加 `IPAPI_IS_KEY` Secret；本地开发放在 `.dev.vars` 中。未配置时，其余四个来源正常工作。免费账号额度以[官方说明](https://ipapi.is/free-tier.html)为准；密钥只在 Worker 服务端使用。
+
+参考评分从 92 分起扣，只计算已接入来源的检测项，详见[评分说明](docs/purity-scoring.md)。OTX 报告提及与欺诈 / 风险分逐项展示扣分和依据。必要数据不完整时不出总分，未知不算零风险。
+
+每个接口最多等待 10 秒。Cloudflare Cache API 按来源和 IP 缓存成功结果 30 分钟、失败结果 1 分钟，页面标明查询时间与缓存状态。`/api/inspect` 保留原有字段，新增 `purity`，包含目标 IP、信号汇总和逐源结果。输入必须是有效的 IPv4 或 IPv6 地址。
+
+来源选型参考 [egress-observatory](https://github.com/BlackSlience-Reaper/egress-observatory) 的公开数据源清单，接入逻辑按各服务公开接口独立实现。
+
 项目地址：
 
 - GitHub：https://github.com/noway1467/ipq
