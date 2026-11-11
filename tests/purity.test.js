@@ -196,3 +196,12 @@ test("默认使用访问者 IP；页面内嵌脚本可以解析", async (t) => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   assert.doesNotThrow(() => new vm.Script(script));
 });
+
+test("示例 IPinfo Token 不发起注定失败的授权请求", async (t) => {
+  const fetchMock = mockSources(t);
+  const response = await worker.fetch(new Request("https://ipq.test/api/inspect?ip=1.1.1.1"), { IPINFO_TOKEN: "example_ipinfo_token" });
+  const result = await response.json();
+  assert.equal(result.sources[0].ok, false);
+  assert.match(result.sources[0].error, /未配置/);
+  assert.ok(fetchMock.mock.calls.every((call) => !call.arguments[0].includes("api.ipinfo.io")));
+});

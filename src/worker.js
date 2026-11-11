@@ -227,7 +227,7 @@ async function queryDbIp(ip) {
 }
 
 async function queryIpInfo(ip, token) {
-  if (!token) {
+  if (!token || token === "example_ipinfo_token") {
     return {
       source: "IPinfo",
       ok: false,
@@ -377,6 +377,7 @@ function renderPage() {
       }
     }
     *{box-sizing:border-box;margin:0;padding:0}
+    [hidden]{display:none!important}
     html,body{min-height:100vh}
     body{background:var(--bg);color:var(--text-primary);font:400 14px/20px -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
     button,input{font:inherit}
@@ -410,7 +411,7 @@ function renderPage() {
     button:disabled{opacity:.6;cursor:wait}
     .search-hint{margin-top:var(--space-1)}
     .hero{margin-bottom:var(--space-4)}
-    .hero-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-3)}
+    .hero-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-3)}
     .hero-stats .card{background:var(--surface);padding:var(--space-4);border:1px solid var(--border)}
     .card{min-width:0;padding:var(--space-3);background:var(--surface-container);border-radius:var(--radius-sm)}
     .label,.title{font-size:12px;line-height:20px;color:var(--text-secondary)}
@@ -447,10 +448,10 @@ function renderPage() {
     .purity-signal.network{color:var(--warning);background:var(--warning-bg)}
     .purity-score{margin-top:var(--space-4);display:grid;grid-template-columns:minmax(160px,.65fr) minmax(0,2fr);border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
     .purity-score:empty{display:none}
+    .purity-score.without-total{grid-template-columns:1fr}
     .score-overview{padding:var(--space-4);background:var(--accent-light);display:flex;flex-direction:column;justify-content:center;gap:var(--space-2)}
     .score-value{font-size:32px;line-height:40px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.04em;color:var(--accent)}
     .score-value small{font-size:12px;line-height:20px;letter-spacing:0;font-weight:400;color:var(--text-secondary);margin-left:var(--space-1)}
-    .score-unavailable{font-size:20px;line-height:28px;font-weight:600;color:var(--text-secondary)}
     .score-breakdown{min-width:0;padding:var(--space-4)}
     .purity-deduction{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:var(--space-2);min-height:36px;border-bottom:1px solid var(--border)}
     .purity-deduction:last-child{border-bottom:0}
@@ -577,7 +578,7 @@ function renderPage() {
       <p class="tiny purity-note">机房标记代表网络类型，未命中不等于一定安全。</p>
       <div id="purity-signals" class="purity-signals"></div>
       <div id="purity-score" class="purity-score"></div>
-      <div class="source-section-header"><h3>检测来源</h3><span class="tiny">展开查看报告与原始数据</span></div>
+      <div id="purity-source-heading" class="source-section-header" hidden><h3>检测来源</h3><span class="tiny">展开查看报告与原始数据</span></div>
       <div id="purity-sources" class="purity-sources" aria-busy="false"></div>
     </section>
 
@@ -605,14 +606,14 @@ function renderPage() {
           <div class="card"><div class="label">网络</div><div id="browser-network" class="value">-</div></div>
         </div>
         <div id="webrtc-list" class="webrtc"></div>
-        <details class="connection-details" open>
+        <details id="domestic-panel" class="connection-details" open hidden>
           <summary>国内直连查询</summary>
           <div id="domestic-ipcn" class="rowbox">等待查询</div>
         </details>
       </section>
     </section>
 
-    <section class="panel geo-panel">
+    <section id="geo-panel" class="panel geo-panel" hidden>
       <div class="toolbar"><h2 class="title">归属地查询来源</h2><span class="tiny">展开核对各来源结果</span></div>
       <div id="source-list" class="sources"></div>
     </section>
@@ -627,6 +628,7 @@ function renderPage() {
       heroLocation: document.getElementById("hero-location"),
       heroIsp: document.getElementById("hero-isp"),
       domesticIpcn: document.getElementById("domestic-ipcn"),
+      domesticPanel: document.getElementById("domestic-panel"),
       cfHttp: document.getElementById("cf-http"),
       sumIp: document.getElementById("sum-ip"),
       sumRegion: document.getElementById("sum-region"),
@@ -640,15 +642,21 @@ function renderPage() {
       browserScreen: document.getElementById("browser-screen"),
       browserNetwork: document.getElementById("browser-network"),
       sourceList: document.getElementById("source-list"),
+      geoPanel: document.getElementById("geo-panel"),
       purityState: document.getElementById("purity-state"),
       purityTarget: document.getElementById("purity-target"),
       puritySignals: document.getElementById("purity-signals"),
       purityScore: document.getElementById("purity-score"),
       puritySources: document.getElementById("purity-sources"),
+      puritySourceHeading: document.getElementById("purity-source-heading"),
       webrtcList: document.getElementById("webrtc-list")
     };
 
-    const setText = (el, value) => { el.textContent = value || "-"; };
+    const hasValue = (value) => value !== undefined && value !== null && (typeof value !== "string" || value.trim() !== "");
+    const setText = (el, value) => {
+      el.textContent = hasValue(value) ? value : "";
+      el.closest(".card").hidden = !hasValue(value);
+    };
     const escapeHtml = (value) => String(value)
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
@@ -657,16 +665,14 @@ function renderPage() {
       .replaceAll("'", "&#39;");
 
     function detailRow(label, value, mono = false) {
-      if (value === undefined || value === null || value === "") return "";
+      if (!hasValue(value)) return "";
       return '<div class="line tiny"><span class="muted">' + escapeHtml(label) + '</span><span title="' + escapeHtml(value) + '" class="' + (mono ? "mono" : "") + '">' + escapeHtml(String(value)) + "</span></div>";
     }
 
     function renderSummary(data) {
       const summary = data.summary || {};
-      els.heroIpv4.textContent = summary.ipv4 || "当前无公网 IPv4";
-      els.heroIpv6.textContent = summary.ipv6 || "当前无公网 IPv6";
-      els.heroIpv4.className = "value big mono" + (summary.ipv4 ? "" : " placeholder-small");
-      els.heroIpv6.className = "value mono" + (summary.ipv6 ? "" : " placeholder-small");
+      setText(els.heroIpv4, summary.ipv4);
+      setText(els.heroIpv6, summary.ipv6);
       setText(els.heroLocation, summary.locationText || [summary.country, summary.region, summary.city].filter(Boolean).join(" / "));
       setText(els.heroIsp, [...new Set([summary.isp, summary.org].filter(Boolean))].join(" / "));
       setText(els.cfHttp, [data.cloudflare && data.cloudflare.httpProtocol, data.cloudflare && data.cloudflare.tlsVersion].filter(Boolean).join(" / "));
@@ -680,16 +686,10 @@ function renderPage() {
     }
 
     function renderDomestic(item) {
-      if (!item) {
-        els.domesticIpcn.innerHTML = '<div class="tiny muted">当前没有国内直连结果。</div>';
-        return;
-      }
-      if (!item.ok) {
-        els.domesticIpcn.innerHTML =
-          '<div class="source-top"><span class="tiny">当前访问线路</span><span class="status-badge" data-state="error">失败</span></div>' +
-          '<p class="tiny purity-note">' + escapeHtml(item.error || "国内直连查询失败") + "</p>";
-        return;
-      }
+      const available = item?.ok && hasValue(item.data?.ip);
+      els.domesticPanel.hidden = !available;
+      els.domesticIpcn.innerHTML = "";
+      if (!available) return;
       const location = item.data && item.data.locationText;
       const details = [
         detailRow("线路", item.data && item.data.lineName ? item.data.lineName : "浏览器直连国内站点"),
@@ -698,7 +698,7 @@ function renderPage() {
       ].join("");
       els.domesticIpcn.innerHTML =
         '<div class="source-top"><span class="tiny">当前访问线路</span><span class="status-badge" data-state="ok">已返回</span></div>' +
-        '<div class="purity-note">' + (details || '<div class="tiny muted">国内直连未返回可展示结果</div>') + "</div>";
+        '<div class="purity-note">' + details + "</div>";
     }
 
     async function queryDomesticViaIpip() {
@@ -797,7 +797,7 @@ function renderPage() {
     }
 
     async function loadDomesticDirect() {
-      els.domesticIpcn.innerHTML = '<div class="tiny muted">国内直连查询中...</div>';
+      renderDomestic(null);
       try {
         renderDomestic(await queryDomesticDirect());
       } catch (error) {
@@ -809,20 +809,17 @@ function renderPage() {
     }
 
     function renderSources(data) {
-      const items = Array.isArray(data.sources) ? data.sources : [];
+      const items = (Array.isArray(data.sources) ? data.sources : []).filter((item) =>
+        item.ok && item.data && Object.entries(item.data).some(([key, value]) => key !== "ip" && hasValue(value))
+      );
       els.sourceList.innerHTML = "";
-
-      if (!items.length) {
-        els.sourceList.innerHTML = '<div class="rowbox tiny">' + escapeHtml(data.error || "当前没有可展示的查询结果。") + "</div>";
-        return;
-      }
+      els.geoPanel.hidden = items.length === 0;
 
       for (const item of items) {
         const card = document.createElement("details");
         card.className = "source-item";
         const location = [item.data && item.data.country, item.data && item.data.region, item.data && item.data.city].filter(Boolean).join(" / ");
-        const details = item.ok
-          ? [
+        const details = [
               detailRow("IP", item.data && item.data.ip, true),
               detailRow("网络段", item.data && item.data.network, true),
               detailRow("位置", location),
@@ -841,8 +838,8 @@ function renderPage() {
               detailRow("ASN", item.data && item.data.asn, true),
               detailRow("连接类型", item.data && item.data.connectionType),
               detailRow("风险等级", item.data && item.data.threatLevel),
-              detailRow("Anycast", item.data && item.data.anycast === true ? "是" : ""),
-              detailRow("Bogon", item.data && item.data.bogon === true ? "是" : ""),
+              detailRow("Anycast", typeof item.data.anycast === "boolean" ? (item.data.anycast ? "是" : "否") : ""),
+              detailRow("Bogon", typeof item.data.bogon === "boolean" ? (item.data.bogon ? "是" : "否") : ""),
               detailRow("货币", [item.data && item.data.currencyName, item.data && item.data.currencyCode].filter(Boolean).join(" / ")),
               detailRow("电话区号", item.data && item.data.phonePrefix, true),
               detailRow("语言", item.data && item.data.languages),
@@ -850,11 +847,10 @@ function renderPage() {
               detailRow("GMT 偏移", item.data && item.data.gmtOffset != null ? item.data.gmtOffset : "", true),
               detailRow("气象站", item.data && item.data.weatherCode, true),
               detailRow("坐标", item.data && item.data.latitude != null && item.data.longitude != null ? item.data.latitude + ", " + item.data.longitude : "", true)
-            ].join("")
-          : '<p class="tiny">' + escapeHtml(item.error || "请求失败") + "</p>";
+            ].join("");
 
         card.innerHTML =
-          '<summary class="source-toggle"><span class="source-name"><strong>' + escapeHtml(item.source || "未命名来源") + '</strong><span class="source-brief" title="' + escapeHtml(location || item.error || "") + '">' + escapeHtml(location || item.error || "") + '</span></span><span class="status-badge" data-state="' + (item.ok ? 'ok' : 'error') + '">' + (item.ok ? "已返回" : "不可用") + '</span></summary>' +
+          '<summary class="source-toggle"><span class="source-name"><strong>' + escapeHtml(item.source || "未命名来源") + '</strong><span class="source-brief" title="' + escapeHtml(location) + '">' + escapeHtml(location) + '</span></span><span class="status-badge" data-state="ok">已返回</span></summary>' +
           '<div class="source-content">' + details + "</div>";
         els.sourceList.appendChild(card);
       }
@@ -874,38 +870,56 @@ function renderPage() {
       els.puritySources.innerHTML = "";
       els.puritySignals.innerHTML = "";
       els.purityScore.innerHTML = "";
+      els.purityScore.className = "purity-score";
       els.purityTarget.textContent = "";
+      els.puritySourceHeading.hidden = true;
       els.purityState.dataset.status = purity ? purity.status : "unknown";
       els.purityState.textContent = purity ? purity.label : error || "暂无检测结果";
       if (!purity) {
         els.puritySources.innerHTML = '<div class="loading-placeholder tiny">' + escapeHtml(error || "输入 IP 或留空查询当前出口。") + '</div>';
         return;
       }
-      els.purityTarget.textContent = '查询目标：' + purity.targetIp + ' · ' + purity.available + '/' + purity.total + ' 个来源有结果';
-      els.puritySignals.innerHTML = Object.entries(purityLabels).map(([key, label]) => {
-        const signal = purity.signals[key];
-        return puritySignal(label, signal.value, signal.conflict, signal.sources);
-      }).join("");
+      const sources = purity.sources.filter((source) => source.ok && (
+        Object.values(source.flags).some((value) => typeof value === "boolean") ||
+        Number.isFinite(source.riskScore) || Number.isFinite(source.reportCount)
+      ));
+      els.purityTarget.textContent = '查询目标：' + purity.targetIp + (sources.length ? ' · 已获取 ' + sources.length + ' 个来源结果' : '');
+      if (!sources.length) {
+        els.puritySources.innerHTML = '<div class="loading-placeholder tiny">本次未获取到检测数据，请稍后重试。</div>';
+        return;
+      }
+      els.puritySourceHeading.hidden = false;
+      els.puritySignals.innerHTML = Object.entries(purityLabels)
+        .filter(([key]) => typeof purity.signals[key]?.value === "boolean")
+        .map(([key, label]) => {
+          const signal = purity.signals[key];
+          return puritySignal(label, signal.value, signal.conflict, signal.sources);
+        }).join("");
       const scoring = purity.scoring;
-      els.purityScore.innerHTML = '<div class="score-overview"><span class="tiny">纯洁度参考分</span>' +
-        (scoring.value === null ? '<strong class="score-unavailable">数据不足</strong>' : '<strong class="score-value">' + scoring.value + '<small>/ 100</small></strong>') +
-        '<p class="tiny">仅计算已接入的检测项</p></div><div class="score-breakdown"><h3>扣分明细</h3>' +
-        scoring.deductions.map((item) => '<div class="purity-deduction"><b class="' + (item.points > 0 ? 'hit' : '') + '">' + (item.points === null ? '—' : item.points > 0 ? '−' + item.points : '0') + '</b><span>' + escapeHtml(item.label) + '</span></div>').join("") +
-        (scoring.missing.length ? '<p class="tiny purity-note">缺少：' + escapeHtml(scoring.missing.join("、")) + '</p>' : '') +
-        (scoring.capped ? '<p class="tiny purity-note">滥用类已按 40 分封顶。</p>' : '') + '</div>' +
-        '<details class="score-explanation"><summary>评分范围与计算依据</summary><p>' + escapeHtml(scoring.note) + '</p>' +
-        scoring.deductions.map((item) => '<p><strong>' + escapeHtml(item.label) + '：</strong>' + escapeHtml(item.detail) + '</p>').join("") + '</details>';
-      for (const source of purity.sources) {
+      const deductions = scoring.deductions.filter((item) => Number.isFinite(item.points));
+      const hasScore = Number.isFinite(scoring.value);
+      // 缺少检测证据时只展示已知扣分，不用剩余来源重算成一个虚高总分。
+      if (hasScore || deductions.length) {
+        els.purityScore.className = "purity-score" + (hasScore ? "" : " without-total");
+        els.purityScore.innerHTML = (hasScore ? '<div class="score-overview"><span class="tiny">纯洁度参考分</span><strong class="score-value">' +
+          scoring.value + '<small>/ 100</small></strong><p class="tiny">仅计算已接入的检测项</p></div>' : '') +
+          '<div class="score-breakdown"><h3>扣分明细</h3>' +
+          deductions.map((item) => '<div class="purity-deduction"><b class="' + (item.points > 0 ? 'hit' : '') + '">' + (item.points > 0 ? '−' + item.points : '0') + '</b><span>' + escapeHtml(item.label) + '</span></div>').join("") +
+          (!hasScore ? '<p class="tiny purity-note">仅展示已获得的结果，本次不计算总分。</p>' : '') +
+          (scoring.capped ? '<p class="tiny purity-note">滥用类已按 40 分封顶。</p>' : '') + '</div>' +
+          '<details class="score-explanation"><summary>评分范围与计算依据</summary><p>' + escapeHtml(scoring.note) + '</p>' +
+          deductions.map((item) => '<p><strong>' + escapeHtml(item.label) + '：</strong>' + escapeHtml(item.detail) + '</p>').join("") + '</details>';
+      }
+      for (const source of sources) {
         const card = document.createElement("details");
         card.className = "source-item purity-source";
-        const status = source.ok ? "已返回" : source.status === "unconfigured" ? "待配置" : source.status === "unknown" ? "未知" : "不可用";
-        const firstDetail = (source.details || []).find(([, value]) => value !== null && value !== undefined && value !== "");
-        const brief = source.ok ? (firstDetail ? firstDetail[0] + '：' + firstDetail[1] : '已返回检测结果') : source.error;
-        const rows = (source.details || []).filter(([, value]) => value !== null && value !== undefined && value !== "").map(([label, value]) =>
+        const details = (source.details || []).filter(([, value]) => hasValue(value));
+        const brief = details.length ? details[0][0] + '：' + details[0][1] : '已返回检测结果';
+        const rows = details.map(([label, value]) =>
           '<div class="purity-row"><span>' + escapeHtml(label) + '</span><span title="' + escapeHtml(value) + '">' + escapeHtml(value) + '</span></div>'
         ).join("");
-        card.innerHTML = '<summary class="source-toggle"><span class="source-name"><strong>' + escapeHtml(source.source) + '</strong><span class="source-brief" title="' + escapeHtml(brief) + '">' + escapeHtml(brief) + '</span></span><span class="status-badge" data-state="' + escapeHtml(source.status) + '">' + status + '</span></summary><div class="source-content">' +
-          (source.ok ? '<div class="purity-signals">' + Object.entries(purityLabels).filter(([key]) => source.flags[key] !== null).map(([key, label]) => puritySignal(label, source.flags[key])).join("") + '</div>' : '<p class="tiny">' + escapeHtml(source.error) + '</p>') +
+        card.innerHTML = '<summary class="source-toggle"><span class="source-name"><strong>' + escapeHtml(source.source) + '</strong><span class="source-brief" title="' + escapeHtml(brief) + '">' + escapeHtml(brief) + '</span></span><span class="status-badge" data-state="ok">已返回</span></summary><div class="source-content">' +
+          '<div class="purity-signals">' + Object.entries(purityLabels).filter(([key]) => typeof source.flags[key] === "boolean").map(([key, label]) => puritySignal(label, source.flags[key])).join("") + '</div>' +
           rows + (source.reports && source.reports.length ? '<ul class="purity-reports">' + source.reports.map((report) => '<li><a href="' + escapeHtml(report.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(report.title) + '</a></li>').join("") + '</ul>' : '') +
           (source.note ? '<p class="tiny">' + escapeHtml(source.note) + '</p>' : '') +
           '<div class="source-footer"><a href="' + escapeHtml(source.website) + '" target="_blank" rel="noopener noreferrer">查看来源网站</a>' +
@@ -919,6 +933,8 @@ function renderPage() {
       const ip = els.input.value.trim();
       els.queryBtn.disabled = true;
       els.queryBtn.textContent = "查询中";
+      renderSummary({});
+      renderSources({});
       renderPurity(null, "检测中…");
       els.puritySources.setAttribute("aria-busy", "true");
       els.puritySources.innerHTML = '<div class="loading-placeholder tiny"><span class="loading-dot" aria-hidden="true"></span>正在查询风险数据库与情报报告…</div>';
@@ -931,7 +947,7 @@ function renderPage() {
       } catch (error) {
         renderSummary({});
         renderPurity(null, "查询失败，请稍后重试");
-        els.sourceList.innerHTML = '<div class="rowbox tiny">查询失败：' + escapeHtml(error && error.message ? error.message : String(error)) + "</div>";
+        renderSources({});
       } finally {
         els.queryBtn.disabled = false;
         els.queryBtn.textContent = "查询";
@@ -947,7 +963,7 @@ function renderPage() {
       if (connection && connection.effectiveType) parts.push(connection.effectiveType);
       if (connection && connection.downlink) parts.push(connection.downlink + " Mb/s");
       if (connection && typeof connection.rtt === "number") parts.push(connection.rtt + " ms RTT");
-      setText(els.browserNetwork, parts.join(" / ") || "浏览器未提供");
+      setText(els.browserNetwork, parts.join(" / "));
     }
 
     function isPrivateAddress(address) {
@@ -966,6 +982,7 @@ function renderPage() {
 
     function renderWebrtc(list) {
       els.webrtcList.innerHTML = "";
+      if (!list.length) return;
       const privateHit = list.find((item) => isPrivateAddress(item.address));
       const publicHit = list.find((item) => isPublicAddress(item.address));
       const hasLeak = Boolean(privateHit || publicHit);
@@ -975,14 +992,6 @@ function renderPage() {
         '<div class="line"><strong>' + (privateHit ? "检测到本地局域网地址暴露" : publicHit ? "检测到 WebRTC 暴露公网地址" : "未发现明显的 WebRTC 地址泄露") + '</strong><span class="badge ' + (hasLeak ? "fail" : "") + '">' + (hasLeak ? "泄露" : "正常") + '</span></div>' +
         '<div class="tiny muted" style="margin-top:8px;">' + (privateHit ? "浏览器暴露了本地地址：" + escapeHtml(privateHit.address) : publicHit ? "浏览器返回了公网候选地址：" + escapeHtml(publicHit.address) : "当前没有采集到可识别的候选地址。") + "</div>";
       els.webrtcList.appendChild(summary);
-
-      if (!list.length) {
-        const empty = document.createElement("div");
-        empty.className = "rtc tiny";
-        empty.textContent = "浏览器没有返回可用的 WebRTC ICE 候选。";
-        els.webrtcList.appendChild(empty);
-        return;
-      }
 
       for (const item of list) {
         const row = document.createElement("div");
